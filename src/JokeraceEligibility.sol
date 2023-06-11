@@ -69,9 +69,9 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /// @notice Current Jokerace contest (election)
   GovernorCountingSimple public underlyingContest;
   /// @notice First second after the current term (a unix timestamp)
-  uint256 termEnd;
+  uint256 public termEnd;
   /// @notice First K winners of the contest will be eligible
-  uint256 topK;
+  uint256 public topK;
   /// @notice Eligible wearers according to each contest
   mapping(address wearer => mapping(address contest => bool eligible)) public eligibleWearersPerContest;
 
