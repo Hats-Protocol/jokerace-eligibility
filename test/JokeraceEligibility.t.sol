@@ -44,20 +44,20 @@ contract TestSetup is DeployImplementationTest {
   error JokeraceEligibility_NotAdmin();
 
   HatsModuleFactory public factory;
-  JokeraceEligibility public instance;
+  JokeraceEligibility public instanceDefaultAdmin;
+  JokeraceEligibility public instanceHatAdmin;
   bytes public otherImmutableArgs;
   bytes public initData;
 
   uint256 public tophat;
   uint256 public winnersHat;
+  uint256 public optionalAdminHat;
   address public eligibility = makeAddr("eligibility");
   address public toggle = makeAddr("toggle");
   address public dao = makeAddr("dao");
-  address public wearer1 = makeAddr("wearer1");
-  address public wearer2 = makeAddr("wearer2");
-  address public nonWearer = makeAddr("nonWearer");
 
   address public minter = makeAddr("minter");
+  address public optionalAdmin = makeAddr("optionalAdmin");
   address public candidate1 = makeAddr("candidate1");
   address public candidate2 = makeAddr("candidate2");
   address public candidate3 = makeAddr("candidate3");
@@ -128,23 +128,28 @@ contract TestSetup is DeployImplementationTest {
     args.push(1);
     contest = new Contest("test contest", "contest", token, token, args);
 
-    //address predictedInstanceAddress = factory.getHatsModuleAddress(address(implementation), )
-
     // set up hats
     tophat = HATS.mintTopHat(dao, "tophat", "dao.eth/tophat");
     vm.startPrank(dao);
     winnersHat = HATS.createHat(tophat, "winnersHat", 50, eligibility, toggle, true, "dao.eth/winnersHat");
-    HATS.mintHat(winnersHat, wearer1);
-    HATS.mintHat(winnersHat, wearer2);
+    optionalAdminHat =
+      HATS.createHat(tophat, "optionalAdminHat", 50, eligibility, toggle, true, "dao.eth/optionalAdminHat");
+    HATS.mintHat(optionalAdminHat, optionalAdmin);
     vm.stopPrank();
 
-    // deploy the eligibility instance
-    instance =
-      deployInstance(winnersHat, tophat, address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+    // deploy the eligibility instance with a default admin
+    instanceDefaultAdmin =
+      deployInstance(winnersHat, uint256(0), address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+
+    // deploy the eligibility instance with a specific hat admin. This instance is used only to check correct admin
+    // rights
+    instanceHatAdmin = deployInstance(
+      winnersHat, optionalAdminHat, address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2
+    );
 
     // update winners hat eligibilty to instance
     vm.startPrank(dao);
-    HATS.changeHatEligibility(winnersHat, address(instance));
+    HATS.changeHatEligibility(winnersHat, address(instanceDefaultAdmin));
     vm.stopPrank();
   }
 }
@@ -155,23 +160,25 @@ contract TestDeployment is TestSetup {
   }
 
   function test_instanceAdminHat() public {
-    assertEq(instance.ADMIN_HAT(), tophat);
+    assertEq(instanceDefaultAdmin.ADMIN_HAT(), uint256(0));
   }
 
   function test_instanceContest() public {
-    assertEq(address(instance.underlyingContest()), address(contest));
+    assertEq(address(instanceDefaultAdmin.underlyingContest()), address(contest));
   }
 
   function test_instanceTermEnd() public {
-    assertEq(instance.termEnd(), contest.contestDeadline() + 86_400);
+    assertEq(instanceDefaultAdmin.termEnd(), contest.contestDeadline() + 86_400);
   }
 
   function test_instanceTopK() public {
-    assertEq(instance.topK(), 2);
+    assertEq(instanceDefaultAdmin.topK(), 2);
   }
 
   function test_hatEligibility() public {
-    assertEq(HATS.getHatEligibilityModule(winnersHat), address(instance), "eligibility module of winners hat");
+    assertEq(
+      HATS.getHatEligibilityModule(winnersHat), address(instanceDefaultAdmin), "eligibility module of winners hat"
+    );
   }
 
   function test_candidatesTokenBalance() public {
@@ -221,12 +228,12 @@ contract TestProposing1Scenario is Proposing1Scenario {
 
   function test_pullContestResults_reverts() public {
     vm.expectRevert(JokeraceEligibility_ContestNotCompleted.selector);
-    instance.pullElectionResults();
+    instanceDefaultAdmin.pullElectionResults();
   }
 
   function test_setReelection_reverts() public {
     vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instance.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
 
@@ -250,6 +257,26 @@ contract Voting1Proposing1Scenario is Proposing1Scenario {
   }
 }
 
+contract Voting2Proposing1Scenario is Proposing1Scenario {
+  function setUp() public virtual override {
+    super.setUp();
+
+    // set time to voting period
+    vm.warp(contestStart + voteDelay + 1);
+
+    // candidates vote
+    vm.startPrank(candidate1);
+    contest.castVote(proposalIds[0], 0, 1 ether);
+    vm.stopPrank();
+    vm.startPrank(candidate2);
+    contest.castVote(proposalIds[1], 0, 0.5 ether);
+    vm.stopPrank();
+    vm.startPrank(candidate3);
+    contest.castVote(proposalIds[2], 0, 0.5 ether);
+    vm.stopPrank();
+  }
+}
+
 contract TestVoting1Proposing1Scenario is Voting1Proposing1Scenario {
   function test_candidateVotes() public {
     (uint256 forVotes1, uint256 againstVotes1) = contest.proposalVotes(proposalIds[0]);
@@ -264,12 +291,12 @@ contract TestVoting1Proposing1Scenario is Voting1Proposing1Scenario {
 
   function test_pullContestResults_reverts() public {
     vm.expectRevert(JokeraceEligibility_ContestNotCompleted.selector);
-    instance.pullElectionResults();
+    instanceDefaultAdmin.pullElectionResults();
   }
 
   function test_setReelection_reverts() public {
     vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instance.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
 
@@ -278,17 +305,32 @@ contract ContestCompletedVoting1Proposing1Scenario is Voting1Proposing1Scenario 
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + 1);
-    instance.pullElectionResults();
+    instanceDefaultAdmin.pullElectionResults();
+  }
+}
+
+contract ContestCompletedVoting2Proposing1Scenario is Voting2Proposing1Scenario {
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(contestStart + voteDelay + votePeriod + 1);
+  }
+}
+
+contract TestContestCompletedVoting2Proposing1Scenario is ContestCompletedVoting2Proposing1Scenario {
+  function test_pullResults_reverts() public {
+    vm.expectRevert(JokeraceEligibility_NoTies.selector);
+    instanceDefaultAdmin.pullElectionResults();
   }
 }
 
 contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting1Proposing1Scenario {
   function test_eligibilityInstance() public {
-    (bool eligible1,) = instance.getWearerStatus(candidate1, winnersHat);
+    (bool eligible1,) = instanceDefaultAdmin.getWearerStatus(candidate1, winnersHat);
     assertEq(eligible1, true, "candidate 1 eligibility");
-    (bool eligible2,) = instance.getWearerStatus(candidate2, winnersHat);
+    (bool eligible2,) = instanceDefaultAdmin.getWearerStatus(candidate2, winnersHat);
     assertEq(eligible2, true, "candidate 2 eligibility");
-    (bool eligible3,) = instance.getWearerStatus(candidate3, winnersHat);
+    (bool eligible3,) = instanceDefaultAdmin.getWearerStatus(candidate3, winnersHat);
     assertEq(eligible3, false, "candidate 3 eligibility");
   }
 
@@ -300,7 +342,7 @@ contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting
 
   function test_setReelection_reverts() public {
     vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instance.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
 
@@ -316,16 +358,16 @@ contract TestTermEndedVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sce
   function test_setReelectionNotAdmin_reverts() public {
     vm.startPrank(candidate1);
     vm.expectRevert(JokeraceEligibility_NotAdmin.selector);
-    instance.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
     vm.stopPrank();
   }
 
   function test_eligibilityInstance() public {
-    (bool eligible1,) = instance.getWearerStatus(candidate1, winnersHat);
+    (bool eligible1,) = instanceDefaultAdmin.getWearerStatus(candidate1, winnersHat);
     assertEq(eligible1, false, "candidate 1 eligibility");
-    (bool eligible2,) = instance.getWearerStatus(candidate2, winnersHat);
+    (bool eligible2,) = instanceDefaultAdmin.getWearerStatus(candidate2, winnersHat);
     assertEq(eligible2, false, "candidate 2 eligibility");
-    (bool eligible3,) = instance.getWearerStatus(candidate3, winnersHat);
+    (bool eligible3,) = instanceDefaultAdmin.getWearerStatus(candidate3, winnersHat);
     assertEq(eligible3, false, "candidate 3 eligibility");
   }
 
@@ -356,7 +398,28 @@ contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sc
 
   function test_reelection() public {
     vm.startPrank(dao);
-    instance.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    vm.stopPrank();
+  }
+}
+
+contract TestReelectionHatAdmin is TestSetup {
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
+  }
+
+  function test_reelectionByTopHat_reverts() public {
+    vm.startPrank(dao);
+    vm.expectRevert(JokeraceEligibility_NotAdmin.selector);
+    instanceHatAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    vm.stopPrank();
+  }
+
+  function test_reelectionDefaultAdmin() public {
+    vm.startPrank(optionalAdmin);
+    instanceHatAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
     vm.stopPrank();
   }
 }
