@@ -38,7 +38,7 @@ The following are abi-encoded (unpacked) and then passed to the `HatsModuleFacto
 - `termEnd`: The timestamp of the term ending time (first second in which the term is considered as ended).
 - `topK`: The top K candidates with the highest scores will be eligible wearers for the corresponding term.
 
-### Contest results
+### Contest Results
 
 Each term starts at the current contest completion and ends according to `termEnd`. After contest completion, anyone can call the `pullElectionResults` function in order to pull its results and update the eligible wearers for the current term. The eligible wearers are the authors of the `topK` proposals with the highest scores.
 
