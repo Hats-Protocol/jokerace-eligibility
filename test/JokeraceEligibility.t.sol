@@ -213,6 +213,23 @@ contract Proposing1Scenario is TestSetup {
   }
 }
 
+contract Proposing2Scenario is TestSetup {
+  uint256[] proposalIds;
+
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to  proposing period
+    vm.warp(contestStart + voteDelay - 1);
+
+    // only one proposal
+    vm.startPrank(candidate1);
+    contest.propose("candidate 1 proposal");
+    vm.stopPrank();
+
+    proposalIds = contest.getAllProposalIds();
+  }
+}
+
 contract TestProposing1Scenario is Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -314,6 +331,32 @@ contract ContestCompletedVoting2Proposing1Scenario is Voting2Proposing1Scenario 
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + 1);
+  }
+}
+
+contract ContestCompletedProposing2Scenario is Proposing2Scenario {
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(contestStart + voteDelay + votePeriod + 1);
+    instanceDefaultAdmin.pullElectionResults();
+  }
+}
+
+contract TestContestCompletedProposing2Scenario is ContestCompletedProposing2Scenario {
+  function test_eligibilityInstance() public {
+    (bool eligible1,) = instanceDefaultAdmin.getWearerStatus(candidate1, winnersHat);
+    assertEq(eligible1, true, "candidate 1 eligibility");
+    (bool eligible2,) = instanceDefaultAdmin.getWearerStatus(candidate2, winnersHat);
+    assertEq(eligible2, false, "candidate 2 eligibility");
+    (bool eligible3,) = instanceDefaultAdmin.getWearerStatus(candidate3, winnersHat);
+    assertEq(eligible3, false, "candidate 3 eligibility");
+  }
+
+  function test_eligibilityHats() public {
+    assertEq(HATS.isEligible(candidate1, winnersHat), true, "candidate 1 eligibility");
+    assertEq(HATS.isEligible(candidate2, winnersHat), false, "candidate 2 eligibility");
+    assertEq(HATS.isEligible(candidate3, winnersHat), false, "candidate 3 eligibility");
   }
 }
 
