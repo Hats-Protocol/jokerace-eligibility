@@ -250,7 +250,7 @@ contract TestProposing1Scenario is Proposing1Scenario {
 
   function test_setReelection_reverts() public {
     vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
 
@@ -313,7 +313,7 @@ contract TestVoting1Proposing1Scenario is Voting1Proposing1Scenario {
 
   function test_setReelection_reverts() public {
     vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
 
@@ -388,7 +388,7 @@ contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting
 
   function test_setReelection_reverts() public {
     vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
 
@@ -405,7 +405,7 @@ contract TestTermEndedVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sce
   function test_setReelectionNotAdmin_reverts() public {
     vm.startPrank(candidate1);
     vm.expectRevert(JokeraceEligibility_NotAdmin.selector);
-    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
     vm.stopPrank();
   }
 
@@ -445,10 +445,10 @@ contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sc
 
   function test_reelection() public {
     vm.prank(dao);
-    address payable newContest = payable(makeAddr("newContest"));
+    address newContest = makeAddr("newContest");
     uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
     uint256 newTopK = 5;
-    instanceDefaultAdmin.reelection(GovernorCountingSimple(newContest), newTermEnd, newTopK);
+    instanceDefaultAdmin.reelection(newContest, newTermEnd, newTopK);
     assertEq(address(instanceDefaultAdmin.underlyingContest()), newContest);
     assertEq(instanceDefaultAdmin.topK(), newTopK);
     assertEq(instanceDefaultAdmin.termEnd(), newTermEnd);
@@ -465,12 +465,12 @@ contract TestReelectionHatAdmin is TestSetup {
   function test_reelectionByTopHat_reverts() public {
     vm.startPrank(dao);
     vm.expectRevert(JokeraceEligibility_NotAdmin.selector);
-    instanceHatAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceHatAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
     vm.stopPrank();
   }
 
   function test_reelectionDefaultAdmin() public {
     vm.prank(optionalAdmin);
-    instanceHatAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceHatAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
