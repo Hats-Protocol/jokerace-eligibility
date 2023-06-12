@@ -3,7 +3,7 @@
 JokeraceEligibility is an eligibility module for [Hats Protocol](https://github.com/hats-protocol/hats-protocol).
 In general, the module defines eligibility for wearers according to a Jokerace contest results. More specifically, the module supports multiple terms, each defined by:
 
-- A Jokerace conteset.
+- A Jokerace contest.
 - The number of winners in the contest (top K with highest score).
 - The term duration, starting from the contest completion.
   Each module instance has its admin/s which can set a reelection (new term), once the current term has ended.
@@ -33,7 +33,7 @@ The following immutable values will also automatically be set within the instanc
 
 The following are abi-encoded (unpacked) and then passed to the `HatsModuleFactory.createHatsModule()` function as `_initData`. These values can be changed at each reelection:
 
-- `underlyingContest`: The Jokerace contest to which for the current term.
+- `underlyingContest`: The Jokerace contest of the current term.
 - `termEnd`: The timestamp of the term ending time (first second in which the term is considered as ended).
 - `topK`: The top K candidates with the highest scores will be eligible wearers for the corresponding term.
 
