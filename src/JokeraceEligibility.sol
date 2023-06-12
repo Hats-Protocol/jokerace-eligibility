@@ -116,7 +116,12 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * according to the current contest that is set. Additionally, this module only checks for eligibility and returns
    * good standing for all wearers.
    */
-  function getWearerStatus(address _wearer, uint256 _hatId) public view override returns (bool eligible, bool standing) {
+  function getWearerStatus(address _wearer, uint256 /* _hatId */ )
+    public
+    view
+    override
+    returns (bool eligible, bool standing)
+  {
     standing = true;
     if (block.timestamp < termEnd) {
       eligible = eligibleWearersPerContest[_wearer][address(underlyingContest)];
@@ -145,13 +150,16 @@ contract JokeraceEligibility is HatsEligibilityModule {
     uint256 numProposals = sortedProposalIds.length;
     uint256 numEligibleWearers;
 
+    uint256 k = topK; // save SLOADs
+
     // check if there's a tie between place k and k + 1. If so, election results are rejected
-    if (numProposals > topK) {
-      numEligibleWearers = topK;
+    if (numProposals > k) {
+      numEligibleWearers = k;
       // get the score of candidate in place K
-      int256 totalVotesPlaceK = getTotalVotes(currentContest, sortedProposalIds[numProposals - topK]);
+      uint256 placeK = numProposals - k; // only do this operation once
+      int256 totalVotesPlaceK = getTotalVotes(currentContest, sortedProposalIds[placeK]);
       // get the score of candidate in place K + 1
-      int256 totalVotesPlaceKPlusOne = getTotalVotes(currentContest, sortedProposalIds[numProposals - topK - 1]);
+      int256 totalVotesPlaceKPlusOne = getTotalVotes(currentContest, sortedProposalIds[placeK - 1]);
 
       if (totalVotesPlaceK == totalVotesPlaceKPlusOne) {
         revert JokeraceEligibility_NoTies();
@@ -160,7 +168,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
       numEligibleWearers = numProposals;
     }
 
-    for (uint256 i = 0; i < numEligibleWearers;) {
+    for (uint256 i; i < numEligibleWearers;) {
       address candidate = getCandidate(currentContest, sortedProposalIds[numProposals - i - 1]);
       eligibleWearersPerContest[candidate][address(currentContest)] = true;
 

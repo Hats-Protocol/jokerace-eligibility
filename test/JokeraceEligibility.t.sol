@@ -104,18 +104,17 @@ contract TestSetup is DeployImplementationTest {
     token.transfer(candidate1, 1 ether);
     token.transfer(candidate2, 1 ether);
     token.transfer(candidate3, 1 ether);
+    vm.stopPrank();
+
     // each candidate delegates to itself
-    vm.startPrank(candidate1);
+    vm.prank(candidate1);
     token.delegate(candidate1);
-    vm.stopPrank();
 
-    vm.startPrank(candidate2);
+    vm.prank(candidate2);
     token.delegate(candidate2);
-    vm.stopPrank();
 
-    vm.startPrank(candidate3);
+    vm.prank(candidate3);
     token.delegate(candidate3);
-    vm.stopPrank();
 
     args.push(contestStart);
     args.push(voteDelay);
@@ -148,9 +147,8 @@ contract TestSetup is DeployImplementationTest {
     );
 
     // update winners hat eligibilty to instance
-    vm.startPrank(dao);
+    vm.prank(dao);
     HATS.changeHatEligibility(winnersHat, address(instanceDefaultAdmin));
-    vm.stopPrank();
   }
 }
 
@@ -159,8 +157,12 @@ contract TestDeployment is TestSetup {
     assertEq(implementation.version_(), JOKERACE_ELIGIBILITY_VERSION, "implementation version");
   }
 
-  function test_instanceAdminHat() public {
+  function test_instanceDefaultAdmin() public {
     assertEq(instanceDefaultAdmin.ADMIN_HAT(), uint256(0));
+  }
+
+  function test_instanceAdminHat() public {
+    assertEq(instanceHatAdmin.ADMIN_HAT(), optionalAdminHat);
   }
 
   function test_instanceContest() public {
@@ -188,6 +190,7 @@ contract TestDeployment is TestSetup {
   }
 }
 
+// Three candidates propose
 contract Proposing1Scenario is TestSetup {
   uint256[] proposalIds;
 
@@ -197,22 +200,20 @@ contract Proposing1Scenario is TestSetup {
     vm.warp(contestStart + voteDelay - 1);
 
     // each candidate proposes and delegates to itself
-    vm.startPrank(candidate1);
+    vm.prank(candidate1);
     contest.propose("candidate 1 proposal");
-    vm.stopPrank();
 
-    vm.startPrank(candidate2);
+    vm.prank(candidate2);
     contest.propose("candidate 2 proposal");
-    vm.stopPrank();
 
-    vm.startPrank(candidate3);
+    vm.prank(candidate3);
     contest.propose("candidate 3 proposal");
-    vm.stopPrank();
 
     proposalIds = contest.getAllProposalIds();
   }
 }
 
+// Only one candidate proposes
 contract Proposing2Scenario is TestSetup {
   uint256[] proposalIds;
 
@@ -222,9 +223,8 @@ contract Proposing2Scenario is TestSetup {
     vm.warp(contestStart + voteDelay - 1);
 
     // only one proposal
-    vm.startPrank(candidate1);
+    vm.prank(candidate1);
     contest.propose("candidate 1 proposal");
-    vm.stopPrank();
 
     proposalIds = contest.getAllProposalIds();
   }
@@ -254,6 +254,7 @@ contract TestProposing1Scenario is Proposing1Scenario {
   }
 }
 
+// Candidates scoring: candidate 1 > candidate 2 > candidate 3
 contract Voting1Proposing1Scenario is Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -262,18 +263,18 @@ contract Voting1Proposing1Scenario is Proposing1Scenario {
     vm.warp(contestStart + voteDelay + 1);
 
     // candidates vote
-    vm.startPrank(candidate1);
+    vm.prank(candidate1);
     contest.castVote(proposalIds[0], 0, 1 ether);
-    vm.stopPrank();
-    vm.startPrank(candidate2);
+
+    vm.prank(candidate2);
     contest.castVote(proposalIds[1], 0, 0.5 ether);
-    vm.stopPrank();
-    vm.startPrank(candidate3);
+
+    vm.prank(candidate3);
     contest.castVote(proposalIds[2], 0, 0.1 ether);
-    vm.stopPrank();
   }
 }
 
+// Candidates scoring (tie between second and third place): candidate 1 > candidate 2 = candidate 3
 contract Voting2Proposing1Scenario is Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -282,15 +283,14 @@ contract Voting2Proposing1Scenario is Proposing1Scenario {
     vm.warp(contestStart + voteDelay + 1);
 
     // candidates vote
-    vm.startPrank(candidate1);
+    vm.prank(candidate1);
     contest.castVote(proposalIds[0], 0, 1 ether);
-    vm.stopPrank();
-    vm.startPrank(candidate2);
+
+    vm.prank(candidate2);
     contest.castVote(proposalIds[1], 0, 0.5 ether);
-    vm.stopPrank();
-    vm.startPrank(candidate3);
+
+    vm.prank(candidate3);
     contest.castVote(proposalIds[2], 0, 0.5 ether);
-    vm.stopPrank();
   }
 }
 
@@ -317,6 +317,7 @@ contract TestVoting1Proposing1Scenario is Voting1Proposing1Scenario {
   }
 }
 
+// Contest completed with candidates 1 & 2 as winners
 contract ContestCompletedVoting1Proposing1Scenario is Voting1Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -326,6 +327,7 @@ contract ContestCompletedVoting1Proposing1Scenario is Voting1Proposing1Scenario 
   }
 }
 
+// Contest completed with a tie (should not accept ties)
 contract ContestCompletedVoting2Proposing1Scenario is Voting2Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -334,6 +336,7 @@ contract ContestCompletedVoting2Proposing1Scenario is Voting2Proposing1Scenario 
   }
 }
 
+// Contest completed with only one candidate, which is less than topK (2)
 contract ContestCompletedProposing2Scenario is Proposing2Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -389,6 +392,7 @@ contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting
   }
 }
 
+// Current term ended, ready for reelection
 contract TermEndedVoting1Proposing1Scenario is ContestCompletedVoting1Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -440,9 +444,14 @@ contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sc
   }
 
   function test_reelection() public {
-    vm.startPrank(dao);
-    instanceDefaultAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
-    vm.stopPrank();
+    vm.prank(dao);
+    address payable newContest = payable(makeAddr("newContest"));
+    uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
+    uint256 newTopK = 5;
+    instanceDefaultAdmin.reelection(GovernorCountingSimple(newContest), newTermEnd, newTopK);
+    assertEq(address(instanceDefaultAdmin.underlyingContest()), newContest);
+    assertEq(instanceDefaultAdmin.topK(), newTopK);
+    assertEq(instanceDefaultAdmin.termEnd(), newTermEnd);
   }
 }
 
@@ -461,8 +470,7 @@ contract TestReelectionHatAdmin is TestSetup {
   }
 
   function test_reelectionDefaultAdmin() public {
-    vm.startPrank(optionalAdmin);
+    vm.prank(optionalAdmin);
     instanceHatAdmin.reelection(contest, contestStart + voteDelay + votePeriod + termPeriod, 2);
-    vm.stopPrank();
   }
 }
