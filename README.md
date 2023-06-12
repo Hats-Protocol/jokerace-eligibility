@@ -42,9 +42,9 @@ The following are abi-encoded (unpacked) and then passed to the `HatsModuleFacto
 
 Each term starts at the current contest completion and ends according to `termEnd`. After contest completion, anyone can call the `pullElectionResults` function in order to pull its results and update the eligible wearers for the current term. The eligible wearers are the authors of the `topK` proposals with the highest scores.
 
-**NOTE** Negative or zero scores are also counted as valid.
+**NOTE**: Negative or zero scores are also counted as valid.
 
-**NOTE** In case there are no definite K winners, meaning that there is a tie between place K and K+1, then the term is considered invalid and no candidate will be eligible.
+**NOTE**: In case there are no definite K winners, meaning that there is a tie between place K and K+1, then the term is considered invalid and no candidate will be eligible.
 
 ### Reelection
 
