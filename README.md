@@ -1,8 +1,9 @@
 # JokeraceEligibility
 
 JokeraceEligibility is an eligibility module for [Hats Protocol](https://github.com/hats-protocol/hats-protocol).
-In general, the module defines eligibility for wearers according to a Jokerace contest results.
-More specifically, the module supports multiple terms, each defined by:
+In general, the module defines eligibility for wearers according to a Jokerace
+contest results. More specifically, the module supports multiple terms, each
+defined by:
 
 - A Jokerace contest.
 - The number of winners in the contest (top K with highest score).
@@ -16,8 +17,8 @@ once the current term has ended.
 JokeraceEligibility inherits from the [HatsEligibilityModule](https://github.com/Hats-Protocol/hats-module#hatseligibilitymodule)
 base contract, from which it receives two major properties:
 
-- It can be cheaply deployed via the [HatsModuleFactory](https://github.com/Hats-Protocol/hats-module#hatsmodulefactory) minimal proxy factory, and
-- It implements the [IHatsEligibility](https://github.com/Hats-Protocol/hats-protocol/blob/main/src/Interfaces/IHatsEligibility.sol) interface
+- It can be cheaply deployed via the minimal proxy factory[HatsModuleFactory](https://github.com/Hats-Protocol/hats-module#hatsmodulefactory)
+- It implements the interface [IHatsEligibility](https://github.com/Hats-Protocol/hats-protocol/blob/main/src/Interfaces/IHatsEligibility.sol)
 
 ### Setup
 
