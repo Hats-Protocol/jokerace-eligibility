@@ -67,11 +67,11 @@ contract JokeraceEligibility is HatsEligibilityModule {
     //////////////////////////////////////////////////////////////*/
 
   /// @notice Current Jokerace contest (election)
-  GovernorCountingSimple public underlyingContest;
+  address public underlyingContest;
   /// @notice First second after the current term (a unix timestamp)
-  uint256 termEnd;
+  uint256 public termEnd;
   /// @notice First K winners of the contest will be eligible
-  uint256 topK;
+  uint256 public topK;
   /// @notice Eligible wearers according to each contest
   mapping(address wearer => mapping(address contest => bool eligible)) public eligibleWearersPerContest;
 
@@ -93,7 +93,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
     (address payable _underlyingContest, uint256 _termEnd, uint256 _topK) =
       abi.decode(_initData, (address, uint256, uint256));
     // initialize the mutable state vars
-    underlyingContest = GovernorCountingSimple(_underlyingContest);
+    underlyingContest = _underlyingContest;
     termEnd = _termEnd;
     topK = _topK;
   }
@@ -110,10 +110,21 @@ contract JokeraceEligibility is HatsEligibilityModule {
                           HATS ELIGIBILITY FUNCTION
     //////////////////////////////////////////////////////////////*/
 
-  function getWearerStatus(address _wearer, uint256 _hatId) public view override returns (bool eligible, bool standing) {
+  /**
+   * @notice Check if a wearer is eligible for a given hat according to the current term contest.
+   * @dev The _hatId parameter is not used. This module is tied to a specific hat at creation and checks eligibility
+   * according to the current contest that is set. Additionally, this module only checks for eligibility and returns
+   * good standing for all wearers.
+   */
+  function getWearerStatus(address _wearer, uint256 /* _hatId */ )
+    public
+    view
+    override
+    returns (bool eligible, bool standing)
+  {
     standing = true;
     if (block.timestamp < termEnd) {
-      eligible = eligibleWearersPerContest[_wearer][address(underlyingContest)];
+      eligible = eligibleWearersPerContest[_wearer][underlyingContest];
     }
   }
 
@@ -121,32 +132,43 @@ contract JokeraceEligibility is HatsEligibilityModule {
                            PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+  /**
+   * @notice Pulls the contest results from the jokerace contest contract.
+   * @dev The eligible wearers for a given completed contest are the top K winners of the contract. In case there is a
+   * tie, meaning that candidates in places K and K+1 have the same score, then the results of this contest rejected.
+   * Additionally, negative scores are also counted as valid scores.
+   */
   function pullElectionResults() public {
-    GovernorCountingSimple currentContest = underlyingContest;
+    GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
 
     if (currentContest.state() != IGovernor.ContestState.Completed) {
       revert JokeraceEligibility_ContestNotCompleted();
     }
 
     // sorted in ascending order
-    uint256[] memory sortedProposalIds = underlyingContest.sortedProposals(true);
+    uint256[] memory sortedProposalIds = currentContest.sortedProposals(true);
     uint256 numProposals = sortedProposalIds.length;
-    uint256 numEligibleWearers = numProposals;
+    uint256 numEligibleWearers;
+
+    uint256 k = topK; // save SLOADs
 
     // check if there's a tie between place k and k + 1. If so, election results are rejected
-    if (numProposals > topK) {
-      numEligibleWearers = topK;
+    if (numProposals > k) {
+      numEligibleWearers = k;
       // get the score of candidate in place K
-      int256 totalVotesPlaceK = getTotalVotes(currentContest, sortedProposalIds[numProposals - topK]);
+      uint256 placeK = numProposals - k; // only do this operation once
+      int256 totalVotesPlaceK = getTotalVotes(currentContest, sortedProposalIds[placeK]);
       // get the score of candidate in place K + 1
-      int256 totalVotesPlaceKPlusOne = getTotalVotes(currentContest, sortedProposalIds[numProposals - topK - 1]);
+      int256 totalVotesPlaceKPlusOne = getTotalVotes(currentContest, sortedProposalIds[placeK - 1]);
 
       if (totalVotesPlaceK == totalVotesPlaceKPlusOne) {
         revert JokeraceEligibility_NoTies();
       }
+    } else {
+      numEligibleWearers = numProposals;
     }
 
-    for (uint256 i = 0; i < numEligibleWearers;) {
+    for (uint256 i; i < numEligibleWearers;) {
       address candidate = getCandidate(currentContest, sortedProposalIds[numProposals - i - 1]);
       eligibleWearersPerContest[candidate][address(currentContest)] = true;
 
@@ -157,7 +179,12 @@ contract JokeraceEligibility is HatsEligibilityModule {
     }
   }
 
-  function reelection(GovernorCountingSimple newUnderlyingContest, uint256 newTermEnd, uint256 newTopK) public {
+  /**
+   * @notice Sets a reelection, i.e. updates the contest for a new term.
+   * @dev Only the module's admin/s have the permission to set a reelection. If an admin is not set at the module
+   * creation, then any admin of hatId is considered an admin by the module.
+   */
+  function reelection(address newUnderlyingContest, uint256 newTermEnd, uint256 newTopK) public {
     if (!reelectionAllowed()) {
       revert JokeraceEligibility_TermNotCompleted();
     }
@@ -178,15 +205,17 @@ contract JokeraceEligibility is HatsEligibilityModule {
     termEnd = newTermEnd;
     topK = newTopK;
 
-    emit NewTerm(address(newUnderlyingContest), newTopK, newTermEnd);
+    emit NewTerm(newUnderlyingContest, newTopK, newTermEnd);
   }
 
   /*//////////////////////////////////////////////////////////////
                           VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+  /// @notice Check if setting a new election is allowed.
   function reelectionAllowed() public view returns (bool allowed) {
-    allowed = block.timestamp >= termEnd || underlyingContest.state() == IGovernor.ContestState.Canceled;
+    allowed = block.timestamp >= termEnd
+      || GovernorCountingSimple(payable(underlyingContest)).state() == IGovernor.ContestState.Canceled;
   }
 
   /*//////////////////////////////////////////////////////////////

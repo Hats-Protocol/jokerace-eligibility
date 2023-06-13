@@ -12,6 +12,7 @@ remappings = [
   "hats-module/=lib/hats-module/src/",
   "jokerace/=lib/jokerace/packages/hardhat/contracts/"
 ]
+gas_reports = ["JokeraceEligibility"]
 
 [profile.ci]
 fuzz = { runs = 5000 }
