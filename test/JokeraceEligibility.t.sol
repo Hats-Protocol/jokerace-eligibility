@@ -20,7 +20,7 @@ contract DeployImplementationTest is DeployImplementation, Test {
   // bytes32 public SALT;
 
   uint256 public fork;
-  uint256 public BLOCK_NUMBER = 17_671_864; // the block number where v1.hatsprotocol.eth was deployed;
+  uint256 public BLOCK_NUMBER = 9_395_052; // the block number where hats module factory was deployed on Goerli;
 
   IHats public constant HATS = IHats(0x3bc1A0Ad72417f2d411118085256fC53CBdDd137); // v1.hatsprotocol.eth
   string public FACTORY_VERSION = "factory test version";
@@ -28,7 +28,7 @@ contract DeployImplementationTest is DeployImplementation, Test {
 
   function setUp() public virtual {
     // create and activate a fork, at BLOCK_NUMBER
-    fork = vm.createSelectFork(vm.rpcUrl("mainnet"), BLOCK_NUMBER);
+    fork = vm.createSelectFork(vm.rpcUrl("goerli"), BLOCK_NUMBER);
 
     // deploy via the script
     DeployImplementation.prepare(JOKERACE_ELIGIBILITY_VERSION, false); // set last arg to true to log deployment
@@ -42,7 +42,7 @@ contract TestSetup is DeployImplementationTest {
   error JokeraceEligibility_NoTies();
   error JokeraceEligibility_NotAdmin();
 
-  HatsModuleFactory public factory;
+  HatsModuleFactory constant FACTORY = HatsModuleFactory(0x60f7bE2ffc5672934146713fAe20Df350F21d8E2);
   JokeraceEligibility public instanceDefaultAdmin;
   JokeraceEligibility public instanceHatAdmin;
   bytes public otherImmutableArgs;
@@ -97,7 +97,7 @@ contract TestSetup is DeployImplementationTest {
     initData = abi.encode(_contest, _termEnd, _topK);
     // deploy the instance
     return JokeraceEligibility(
-      deployModuleInstance(factory, address(implementation), _winnersHat, otherImmutableArgs, initData)
+      deployModuleInstance(FACTORY, address(implementation), _winnersHat, otherImmutableArgs, initData)
     );
   }
 
@@ -117,8 +117,6 @@ contract TestSetup is DeployImplementationTest {
   function setUp() public virtual override {
     super.setUp();
     contestStart = block.timestamp;
-    // deploy the hats module factory
-    factory = deployModuleFactory(HATS, SALT, FACTORY_VERSION);
 
     // set up a contest
     leaf1 = keccak256(abi.encodePacked(candidate1, uint256(100)));
