@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.18;
 
-/*
 import { Test, console2 } from "forge-std/Test.sol";
 import { JokeraceEligibility } from "../src/JokeraceEligibility.sol";
 import { DeployImplementation } from "../script/JokeraceEligibility.s.sol";
@@ -11,10 +10,12 @@ import {
   deployModuleFactory,
   deployModuleInstance
 } from "lib/hats-module/src/utils/DeployFunctions.sol";
-import { GovernorCountingSimple } from "jokerace/governance/extensions/GovernorCountingSimple.sol";
-import { GenericVotesTimestampToken } from "jokerace/GenericVotesTimestampToken.sol";
+//import { GovernorCountingSimple } from "jokerace/governance/extensions/GovernorCountingSimple.sol";
+//import { GenericVotesTimestampToken } from "jokerace/GenericVotesTimestampToken.sol";
+import { GovernorSorting } from "jokerace/governance/extensions/GovernorSorting.sol";
 import { Contest } from "jokerace/Contest.sol";
-import { IVotesTimestamp } from "jokerace/governance/utils/IVotesTimestamp.sol";
+import { IGovernor } from "jokerace/governance/IGovernor.sol";
+//import { IVotesTimestamp } from "jokerace/governance/utils/IVotesTimestamp.sol";
 
 contract DeployImplementationTest is DeployImplementation, Test {
   // variables inherited from DeployImplementation script
@@ -22,9 +23,9 @@ contract DeployImplementationTest is DeployImplementation, Test {
   // bytes32 public SALT;
 
   uint256 public fork;
-  uint256 public BLOCK_NUMBER = 16_947_805; // the block number where v1.hatsprotocol.eth was deployed;
+  uint256 public BLOCK_NUMBER = 17_671_864; // the block number where v1.hatsprotocol.eth was deployed;
 
-  IHats public constant HATS = IHats(0x9D2dfd6066d5935267291718E8AA16C8Ab729E9d); // v1.hatsprotocol.eth
+  IHats public constant HATS = IHats(0x3bc1A0Ad72417f2d411118085256fC53CBdDd137); // v1.hatsprotocol.eth
   string public FACTORY_VERSION = "factory test version";
   string public JOKERACE_ELIGIBILITY_VERSION = "test version";
 
@@ -44,6 +45,23 @@ contract TestSetup is DeployImplementationTest {
   error JokeraceEligibility_NoTies();
   error JokeraceEligibility_NotAdmin();
 
+  //struct TargetMetadata {
+  //  address targetAddress;
+  //}
+  //
+  //struct SafeMetadata {
+  //  address[] signers;
+  //  uint256 threshold;
+  //}
+  //
+  //struct ProposalCore {
+  //  address author;
+  //  bool exists;
+  //  string description;
+  //  TargetMetadata targetMetadata;
+  //  SafeMetadata safeMetadata;
+  //}
+
   HatsModuleFactory public factory;
   JokeraceEligibility public instanceDefaultAdmin;
   JokeraceEligibility public instanceHatAdmin;
@@ -62,9 +80,19 @@ contract TestSetup is DeployImplementationTest {
   address public candidate1 = makeAddr("candidate1");
   address public candidate2 = makeAddr("candidate2");
   address public candidate3 = makeAddr("candidate3");
+  bytes32 leaf1;
+  bytes32 leaf2;
+  bytes32 leaf3;
+  bytes32[] proof1;
+  bytes32[] proof2;
+  bytes32[] proof3;
+  bytes32 votingMerkleRoot;
+  address[] signers1 = [candidate1];
+  address[] signers2 = [candidate2];
+  address[] signers3 = [candidate3];
 
   Contest contest;
-  GenericVotesTimestampToken token;
+  //GenericVotesTimestampToken token;
   uint256[] args;
   uint256 contestStart;
   uint256 constant voteDelay = 3600;
@@ -93,6 +121,19 @@ contract TestSetup is DeployImplementationTest {
     );
   }
 
+  function _efficientHash(bytes32 a, bytes32 b) private pure returns (bytes32 value) {
+    /// @solidity memory-safe-assembly
+    assembly {
+      mstore(0x00, a)
+      mstore(0x20, b)
+      value := keccak256(0x00, 0x40)
+    }
+  }
+
+  function _hashPair(bytes32 a, bytes32 b) private pure returns (bytes32) {
+    return a < b ? _efficientHash(a, b) : _efficientHash(b, a);
+  }
+
   function setUp() public virtual override {
     super.setUp();
     contestStart = block.timestamp;
@@ -100,33 +141,22 @@ contract TestSetup is DeployImplementationTest {
     factory = deployModuleFactory(HATS, SALT, FACTORY_VERSION);
 
     // set up a contest
-    token = new GenericVotesTimestampToken("test", "test", minter, 3 ether, true);
-    vm.startPrank(minter);
-    token.transfer(candidate1, 1 ether);
-    token.transfer(candidate2, 1 ether);
-    token.transfer(candidate3, 1 ether);
-    vm.stopPrank();
+    leaf1 = keccak256(abi.encodePacked(candidate1, uint256(100)));
+    leaf2 = keccak256(abi.encodePacked(candidate2, uint256(100)));
+    leaf3 = keccak256(abi.encodePacked(candidate3, uint256(100)));
 
-    // each candidate delegates to itself
-    vm.prank(candidate1);
-    token.delegate(candidate1);
-
-    vm.prank(candidate2);
-    token.delegate(candidate2);
-
-    vm.prank(candidate3);
-    token.delegate(candidate3);
+    proof1 = [leaf2, leaf3];
+    proof2 = [leaf1, leaf3];
+    proof3 = [_hashPair(leaf1, leaf2)];
+    votingMerkleRoot = _hashPair(_hashPair(leaf1, leaf2), leaf3);
 
     args.push(contestStart);
     args.push(voteDelay);
     args.push(votePeriod);
-    args.push(contestStart);
-    args.push(0);
     args.push(50);
     args.push(50);
     args.push(1);
-    args.push(1);
-    contest = new Contest("test contest", "contest", token, token, args);
+    contest = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
 
     // set up hats
     tophat = HATS.mintTopHat(dao, "tophat", "dao.eth/tophat");
@@ -183,12 +213,6 @@ contract TestDeployment is TestSetup {
       HATS.getHatEligibilityModule(winnersHat), address(instanceDefaultAdmin), "eligibility module of winners hat"
     );
   }
-
-  function test_candidatesTokenBalance() public {
-    assertEq(token.balanceOf(candidate1), 1 ether, "candidate 1 token balance");
-    assertEq(token.balanceOf(candidate2), 1 ether, "candidate 2 token balance");
-    assertEq(token.balanceOf(candidate3), 1 ether, "candidate 3 token balance");
-  }
 }
 
 // Three candidates propose
@@ -202,13 +226,34 @@ contract Proposing1Scenario is TestSetup {
 
     // each candidate proposes and delegates to itself
     vm.prank(candidate1);
-    contest.propose("candidate 1 proposal");
+    IGovernor.ProposalCore memory proposal1 = IGovernor.ProposalCore({
+      author: candidate1,
+      description: "candidate 1 proposal",
+      exists: true,
+      targetMetadata: IGovernor.TargetMetadata({ targetAddress: candidate1 }),
+      safeMetadata: IGovernor.SafeMetadata({ signers: signers1, threshold: 1 })
+    });
+    contest.proposeWithoutProof(proposal1);
 
     vm.prank(candidate2);
-    contest.propose("candidate 2 proposal");
+    IGovernor.ProposalCore memory proposal2 = IGovernor.ProposalCore({
+      author: candidate2,
+      description: "candidate 2 proposal",
+      exists: true,
+      targetMetadata: IGovernor.TargetMetadata({ targetAddress: candidate2 }),
+      safeMetadata: IGovernor.SafeMetadata({ signers: signers2, threshold: 1 })
+    });
+    contest.proposeWithoutProof(proposal2);
 
     vm.prank(candidate3);
-    contest.propose("candidate 3 proposal");
+    IGovernor.ProposalCore memory proposal3 = IGovernor.ProposalCore({
+      author: candidate3,
+      description: "candidate 3 proposal",
+      exists: true,
+      targetMetadata: IGovernor.TargetMetadata({ targetAddress: candidate3 }),
+      safeMetadata: IGovernor.SafeMetadata({ signers: signers3, threshold: 1 })
+    });
+    contest.proposeWithoutProof(proposal3);
 
     proposalIds = contest.getAllProposalIds();
   }
@@ -225,7 +270,14 @@ contract Proposing2Scenario is TestSetup {
 
     // only one proposal
     vm.prank(candidate1);
-    contest.propose("candidate 1 proposal");
+    IGovernor.ProposalCore memory proposal1 = IGovernor.ProposalCore({
+      author: candidate1,
+      description: "candidate 1 proposal",
+      exists: true,
+      targetMetadata: IGovernor.TargetMetadata({ targetAddress: candidate1 }),
+      safeMetadata: IGovernor.SafeMetadata({ signers: signers1, threshold: 1 })
+    });
+    contest.proposeWithoutProof(proposal1);
 
     proposalIds = contest.getAllProposalIds();
   }
@@ -265,13 +317,13 @@ contract Voting1Proposing1Scenario is Proposing1Scenario {
 
     // candidates vote
     vm.prank(candidate1);
-    contest.castVote(proposalIds[0], 0, 1 ether);
+    contest.castVote(proposalIds[0], 0, 100, 100, proof1);
 
     vm.prank(candidate2);
-    contest.castVote(proposalIds[1], 0, 0.5 ether);
+    contest.castVote(proposalIds[1], 0, 100, 50, proof2);
 
     vm.prank(candidate3);
-    contest.castVote(proposalIds[2], 0, 0.1 ether);
+    contest.castVote(proposalIds[2], 0, 100, 100, proof3);
   }
 }
 
@@ -285,26 +337,26 @@ contract Voting2Proposing1Scenario is Proposing1Scenario {
 
     // candidates vote
     vm.prank(candidate1);
-    contest.castVote(proposalIds[0], 0, 1 ether);
+    contest.castVote(proposalIds[0], 0, 100, 100, proof1);
 
     vm.prank(candidate2);
-    contest.castVote(proposalIds[1], 0, 0.5 ether);
+    contest.castVote(proposalIds[1], 0, 100, 100, proof2);
 
     vm.prank(candidate3);
-    contest.castVote(proposalIds[2], 0, 0.5 ether);
+    contest.castVote(proposalIds[2], 0, 100, 100, proof3);
   }
 }
 
 contract TestVoting1Proposing1Scenario is Voting1Proposing1Scenario {
   function test_candidateVotes() public {
     (uint256 forVotes1, uint256 againstVotes1) = contest.proposalVotes(proposalIds[0]);
-    assertEq(int256(forVotes1) - int256(againstVotes1), 1 ether, "candidate 1 votes");
+    assertEq(int256(forVotes1) - int256(againstVotes1), 100, "candidate 1 votes");
 
     (uint256 forVotes2, uint256 againstVotes2) = contest.proposalVotes(proposalIds[1]);
-    assertEq(int256(forVotes2) - int256(againstVotes2), 0.5 ether, "candidate 2 votes");
+    assertEq(int256(forVotes2) - int256(againstVotes2), 50, "candidate 2 votes");
 
     (uint256 forVotes3, uint256 againstVotes3) = contest.proposalVotes(proposalIds[2]);
-    assertEq(int256(forVotes3) - int256(againstVotes3), 0.1 ether, "candidate 3 votes");
+    assertEq(int256(forVotes3) - int256(againstVotes3), 100, "candidate 3 votes");
   }
 
   function test_pullContestResults_reverts() public {
@@ -376,15 +428,15 @@ contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting
     (bool eligible1,) = instanceDefaultAdmin.getWearerStatus(candidate1, winnersHat);
     assertEq(eligible1, true, "candidate 1 eligibility");
     (bool eligible2,) = instanceDefaultAdmin.getWearerStatus(candidate2, winnersHat);
-    assertEq(eligible2, true, "candidate 2 eligibility");
+    assertEq(eligible2, false, "candidate 2 eligibility");
     (bool eligible3,) = instanceDefaultAdmin.getWearerStatus(candidate3, winnersHat);
-    assertEq(eligible3, false, "candidate 3 eligibility");
+    assertEq(eligible3, true, "candidate 3 eligibility");
   }
 
   function test_eligibilityHats() public {
     assertEq(HATS.isEligible(candidate1, winnersHat), true, "candidate 1 eligibility");
-    assertEq(HATS.isEligible(candidate2, winnersHat), true, "candidate 2 eligibility");
-    assertEq(HATS.isEligible(candidate3, winnersHat), false, "candidate 3 eligibility");
+    assertEq(HATS.isEligible(candidate2, winnersHat), false, "candidate 2 eligibility");
+    assertEq(HATS.isEligible(candidate3, winnersHat), true, "candidate 3 eligibility");
   }
 
   function test_setReelection_reverts() public {
@@ -394,6 +446,7 @@ contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting
 }
 
 // Current term ended, ready for reelection
+
 contract TermEndedVoting1Proposing1Scenario is ContestCompletedVoting1Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -441,7 +494,7 @@ contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sc
     args.push(50);
     args.push(1);
     args.push(1);
-    contest = new Contest("test contest reelection", "contest reelection", token, token, args);
+    contest = new Contest("test contest reelection", "contest reelection", bytes32(0), votingMerkleRoot, args);
   }
 
   function test_reelection() public {
@@ -475,4 +528,3 @@ contract TestReelectionHatAdmin is TestSetup {
     instanceHatAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
-*/
