@@ -12,7 +12,7 @@ contract DeployImplementation is Script {
   bytes32 public SALT = keccak256("lets add some salt to this meal");
 
   // default values
-  string public version = "0.1.0"; // increment with each deploy
+  string public version = "0.2.0"; // increment with each deploy
   bool private verbose = true;
 
   /// @notice Override default values, if desired
@@ -112,5 +112,8 @@ contract DeployInstance is Script {
     }
   }
 
-  // forge script script/HatsOnboardingShaman.s.sol:DeployInstance -f ethereum --broadcast --verify
+  // forge script script/JokeraceEligibility.s.sol:DeployImplementation -f goerli --broadcast --verify
+  // forge verify-contract --chain-id 5 --num-of-optimizations 1000000 --watch --constructor-args $(cast abi-encode
+  // "constructor(string)" "0.2.0") --compiler-version v0.8.18 0xd7c10b09453007993960FE2f92cE497A32059E08
+  // src/JokeraceEligibility.sol:JokeraceEligibility --etherscan-api-key 3UMT79K2BR98DP5BMX6XT5NDEVSBN1QTHE
 }

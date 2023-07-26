@@ -10,7 +10,7 @@ remappings = [
   "forge-std/=lib/forge-std/src/",
   "hats-protocol/=lib/hats-protocol/src/",
   "hats-module/=lib/hats-module/src/",
-  "jokerace/=lib/jokerace/packages/hardhat/contracts/"
+  "jokerace/=lib/jokerace/packages/forge/src/"
 ]
 gas_reports = ["JokeraceEligibility"]
 
