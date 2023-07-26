@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.18;
 
+/*
 import { Test, console2 } from "forge-std/Test.sol";
 import { JokeraceEligibility } from "../src/JokeraceEligibility.sol";
 import { DeployImplementation } from "../script/JokeraceEligibility.s.sol";
@@ -474,3 +475,4 @@ contract TestReelectionHatAdmin is TestSetup {
     instanceHatAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
+*/

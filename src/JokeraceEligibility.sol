@@ -6,7 +6,7 @@ pragma solidity ^0.8.18;
 import { IHatsEligibility } from "hats-protocol/Interfaces/IHatsEligibility.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
 import { HatsEligibilityModule, HatsModule } from "hats-module/HatsEligibilityModule.sol";
-import { GovernorCountingSimple } from "jokerace/governance/extensions/GovernorCountingSimple.sol";
+import { GovernorSorting } from "jokerace/governance/extensions/GovernorSorting.sol";
 import { IGovernor } from "jokerace/governance/IGovernor.sol";
 
 contract JokeraceEligibility is HatsEligibilityModule {
@@ -139,7 +139,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * Additionally, negative scores are also counted as valid scores.
    */
   function pullElectionResults() public {
-    GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
+    GovernorSorting currentContest = GovernorSorting(payable(underlyingContest));
 
     if (currentContest.state() != IGovernor.ContestState.Completed) {
       revert JokeraceEligibility_ContestNotCompleted();
@@ -215,19 +215,19 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /// @notice Check if setting a new election is allowed.
   function reelectionAllowed() public view returns (bool allowed) {
     allowed = block.timestamp >= termEnd
-      || GovernorCountingSimple(payable(underlyingContest)).state() == IGovernor.ContestState.Canceled;
+      || GovernorSorting(payable(underlyingContest)).state() == IGovernor.ContestState.Canceled;
   }
 
   /*//////////////////////////////////////////////////////////////
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-  function getTotalVotes(GovernorCountingSimple contest, uint256 proposalId) internal view returns (int256 totalVotes) {
+  function getTotalVotes(GovernorSorting contest, uint256 proposalId) internal view returns (int256 totalVotes) {
     (uint256 forVotes, uint256 againstVotes) = contest.proposalVotes(proposalId);
     totalVotes = int256(forVotes) - int256(againstVotes);
   }
 
-  function getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
+  function getCandidate(GovernorSorting contest, uint256 proposalId) internal view returns (address candidate) {
     candidate = contest.getProposal(proposalId).author;
   }
 }
