@@ -7,6 +7,3 @@
 [submodule "lib/jokerace"]
 	path = lib/jokerace
 	url = https://github.com/jk-labs-inc/jokerace
-[submodule "lib/hats-module"]
-	path = lib/hats-module
-	url = https://github.com/Hats-Protocol/hats-module
