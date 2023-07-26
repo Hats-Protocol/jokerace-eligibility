@@ -10,12 +10,9 @@ import {
   deployModuleFactory,
   deployModuleInstance
 } from "lib/hats-module/src/utils/DeployFunctions.sol";
-//import { GovernorCountingSimple } from "jokerace/governance/extensions/GovernorCountingSimple.sol";
-//import { GenericVotesTimestampToken } from "jokerace/GenericVotesTimestampToken.sol";
 import { GovernorSorting } from "jokerace/governance/extensions/GovernorSorting.sol";
 import { Contest } from "jokerace/Contest.sol";
 import { IGovernor } from "jokerace/governance/IGovernor.sol";
-//import { IVotesTimestamp } from "jokerace/governance/utils/IVotesTimestamp.sol";
 
 contract DeployImplementationTest is DeployImplementation, Test {
   // variables inherited from DeployImplementation script
@@ -44,23 +41,6 @@ contract TestSetup is DeployImplementationTest {
   error JokeraceEligibility_TermNotCompleted();
   error JokeraceEligibility_NoTies();
   error JokeraceEligibility_NotAdmin();
-
-  //struct TargetMetadata {
-  //  address targetAddress;
-  //}
-  //
-  //struct SafeMetadata {
-  //  address[] signers;
-  //  uint256 threshold;
-  //}
-  //
-  //struct ProposalCore {
-  //  address author;
-  //  bool exists;
-  //  string description;
-  //  TargetMetadata targetMetadata;
-  //  SafeMetadata safeMetadata;
-  //}
 
   HatsModuleFactory public factory;
   JokeraceEligibility public instanceDefaultAdmin;
