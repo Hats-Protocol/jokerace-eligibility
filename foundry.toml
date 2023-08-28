@@ -4,13 +4,15 @@ out = "out"
 libs = ["lib"]
 optimizer_runs = 1_000_000
 auto_detect_solc = false
-solc = "0.8.18"
+solc = "0.8.19"
+bytecode_hash = "none"
 remappings = [
   "ds-test/=lib/forge-std/lib/ds-test/src/",
   "forge-std/=lib/forge-std/src/",
   "hats-protocol/=lib/hats-protocol/src/",
   "hats-module/=lib/hats-module/src/",
-  "jokerace/=lib/jokerace/packages/forge/src/"
+  "jokerace/=lib/jokerace/packages/forge/src/",
+  "solady/=lib/hats-module/lib/solady/src/"
 ]
 gas_reports = ["JokeraceEligibility"]
 
