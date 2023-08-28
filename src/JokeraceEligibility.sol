@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.19;
 
 // import { console2 } from "forge-std/Test.sol"; // remove before deploy
 import { IHatsEligibility } from "hats-protocol/Interfaces/IHatsEligibility.sol";
@@ -89,7 +89,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
    *  _termEnd - Final second of the current term (a unix timestamp), i.e. the point at which hats become inactive
    *  _topK - First K winners of the contest will be eligible
    */
-  function setUp(bytes calldata _initData) public override initializer {
+  function _setUp(bytes calldata _initData) internal override {
     (address payable _underlyingContest, uint256 _termEnd, uint256 _topK) =
       abi.decode(_initData, (address, uint256, uint256));
     // initialize the mutable state vars

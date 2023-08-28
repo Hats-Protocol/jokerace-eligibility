@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.19;
 
 import { Script, console2 } from "forge-std/Script.sol";
 import { JokeraceEligibility } from "../src/JokeraceEligibility.sol";
@@ -12,7 +12,7 @@ contract DeployImplementation is Script {
   bytes32 public SALT = keccak256("lets add some salt to this meal");
 
   // default values
-  string public version = "0.2.0"; // increment with each deploy
+  string public version = "0.3.0"; // increment with each deploy
   bool private verbose = true;
 
   /// @notice Override default values, if desired

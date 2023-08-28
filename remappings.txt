@@ -4,3 +4,4 @@ hats-protocol/=lib/hats-protocol/src/
 hats-module/=lib/hats-module/src/
 jokerace/=lib/jokerace/packages/forge/src/
 @openzeppelin/=lib/jokerace/packages/forge/lib/openzeppelin-contracts/contracts/
+solady/=lib/hats-module/lib/solady/src/
