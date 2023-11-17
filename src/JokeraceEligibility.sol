@@ -6,7 +6,7 @@ pragma solidity ^0.8.19;
 import { IHatsEligibility } from "hats-protocol/Interfaces/IHatsEligibility.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
 import { HatsEligibilityModule, HatsModule } from "hats-module/HatsEligibilityModule.sol";
-import { GovernorSorting } from "jokerace/governance/extensions/GovernorSorting.sol";
+import { GovernorCountingSimple } from "jokerace/governance/extensions/GovernorCountingSimple.sol";
 import { IGovernor } from "jokerace/governance/IGovernor.sol";
 
 contract JokeraceEligibility is HatsEligibilityModule {
@@ -139,37 +139,27 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * Additionally, negative scores are also counted as valid scores.
    */
   function pullElectionResults() public {
-    GovernorSorting currentContest = GovernorSorting(payable(underlyingContest));
+    GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
 
     if (currentContest.state() != IGovernor.ContestState.Completed) {
       revert JokeraceEligibility_ContestNotCompleted();
     }
 
-    // sorted in ascending order
-    uint256[] memory sortedProposalIds = currentContest.sortedProposals(true);
-    uint256 numProposals = sortedProposalIds.length;
+    uint256[] memory proposalIds = currentContest.getAllProposalIds();
+    uint256 numDeletedProposals = currentContest.getAllDeletedProposalIds().length;
+    uint256 numProposals = proposalIds.length - numDeletedProposals;
     uint256 numEligibleWearers;
 
     uint256 k = topK; // save SLOADs
 
-    // check if there's a tie between place k and k + 1. If so, election results are rejected
-    if (numProposals > k) {
-      numEligibleWearers = k;
-      // get the score of candidate in place K
-      uint256 placeK = numProposals - k; // only do this operation once
-      int256 totalVotesPlaceK = getTotalVotes(currentContest, sortedProposalIds[placeK]);
-      // get the score of candidate in place K + 1
-      int256 totalVotesPlaceKPlusOne = getTotalVotes(currentContest, sortedProposalIds[placeK - 1]);
-
-      if (totalVotesPlaceK == totalVotesPlaceKPlusOne) {
-        revert JokeraceEligibility_NoTies();
-      }
-    } else {
-      numEligibleWearers = numProposals;
-    }
+    numEligibleWearers = numProposals > k ? k : numProposals;
 
     for (uint256 i; i < numEligibleWearers;) {
-      address candidate = getCandidate(currentContest, sortedProposalIds[numProposals - i - 1]);
+      uint256 forVotesOfCurrentRank = currentContest.sortedRanks(currentContest.getRankIndex(i));
+      uint256 numProposalsWithRankIVotes = currentContest.getNumProposalsWithThisManyForVotes(forVotesOfCurrentRank);
+      if (numProposalsWithRankIVotes > 1) revert JokeraceEligibility_NoTies(); // revert if a rank that a hat is to go to is tied
+      
+      address candidate = getCandidate(currentContest, currentContest.getOnlyProposalIdWithThisManyForVotes(forVotesOfCurrentRank));
       eligibleWearersPerContest[candidate][address(currentContest)] = true;
 
       // should not overflow based on < numEligibleWearers stopping condition
@@ -215,19 +205,19 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /// @notice Check if setting a new election is allowed.
   function reelectionAllowed() public view returns (bool allowed) {
     allowed = block.timestamp >= termEnd
-      || GovernorSorting(payable(underlyingContest)).state() == IGovernor.ContestState.Canceled;
+      || GovernorCountingSimple(payable(underlyingContest)).state() == IGovernor.ContestState.Canceled;
   }
 
   /*//////////////////////////////////////////////////////////////
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-  function getTotalVotes(GovernorSorting contest, uint256 proposalId) internal view returns (int256 totalVotes) {
+  function getTotalVotes(GovernorCountingSimple contest, uint256 proposalId) internal view returns (int256 totalVotes) {
     (uint256 forVotes, uint256 againstVotes) = contest.proposalVotes(proposalId);
     totalVotes = int256(forVotes) - int256(againstVotes);
   }
 
-  function getCandidate(GovernorSorting contest, uint256 proposalId) internal view returns (address candidate) {
+  function getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
     candidate = contest.getProposal(proposalId).author;
   }
 }
