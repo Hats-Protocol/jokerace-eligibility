@@ -152,11 +152,9 @@ contract JokeraceEligibility is HatsEligibilityModule {
     uint256[] memory proposalIds = currentContest.getAllProposalIds();
     uint256 numDeletedProposals = currentContest.getAllDeletedProposalIds().length;
     uint256 numProposals = proposalIds.length - numDeletedProposals;
-    uint256 numEligibleWearers;
-
     uint256 k = topK; // save SLOADs
+    uint256 numEligibleWearers = numProposals > k ? k : numProposals;
 
-    numEligibleWearers = numProposals > k ? k : numProposals;
 
     for (uint256 i; i < numEligibleWearers;) {
       uint256 forVotesOfCurrentRank = currentContest.sortedRanks(currentContest.getRankIndex(i));
