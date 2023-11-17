@@ -155,13 +155,13 @@ contract JokeraceEligibility is HatsEligibilityModule {
     uint256 k = topK; // save SLOADs
     uint256 numEligibleWearers = numProposals > k ? k : numProposals;
 
-
     for (uint256 i; i < numEligibleWearers;) {
       uint256 forVotesOfCurrentRank = currentContest.sortedRanks(currentContest.getRankIndex(i));
       uint256 numProposalsWithRankIVotes = currentContest.getNumProposalsWithThisManyForVotes(forVotesOfCurrentRank);
-      if (numProposalsWithRankIVotes > 1) revert JokeraceEligibility_NoTies(); // revert if a rank that a hat is to go to is tied
+      if (numProposalsWithRankIVotes > 1) revert JokeraceEligibility_NoTies(); // revert if a rank is tied
 
-      address candidate = getCandidate(currentContest, currentContest.getOnlyProposalIdWithThisManyForVotes(forVotesOfCurrentRank));
+      address candidate =
+        getCandidate(currentContest, currentContest.getOnlyProposalIdWithThisManyForVotes(forVotesOfCurrentRank));
       eligibleWearersPerContest[candidate][address(currentContest)] = true;
 
       // should not overflow based on < numEligibleWearers stopping condition
