@@ -18,6 +18,10 @@ contract JokeraceEligibility is HatsEligibilityModule {
   error JokeraceEligibility_ContestNotCompleted();
   /// @notice Indicates that the current term is still on-going
   error JokeraceEligibility_TermNotCompleted();
+  /// @notice Indicates that downvoting must be enabled on the underlying contest to be able to get rankings
+  error JokeraceEligibility_MustHaveDownvotingDisabled();
+  /// @notice Indicates that downvoting must be enabled on the underlying contest to be able to get rankings
+  error JokeraceEligibility_MustHaveSortingEnabled();
   /// @notice Indicates that top K election winners cannot be deduced because of a tie
   error JokeraceEligibility_NoTies();
   /// @notice Indicates that the caller doesn't have admin permsissions
@@ -141,9 +145,9 @@ contract JokeraceEligibility is HatsEligibilityModule {
   function pullElectionResults() public {
     GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
 
-    if (currentContest.state() != IGovernor.ContestState.Completed) {
-      revert JokeraceEligibility_ContestNotCompleted();
-    }
+    if (currentContest.state() != IGovernor.ContestState.Completed) revert JokeraceEligibility_ContestNotCompleted();
+    if (currentContest.downvotingAllowed() == 1) revert JokeraceEligibility_MustHaveDownvotingDisabled();
+    if (currentContest.sortingEnabled() == 0) revert JokeraceEligibility_MustHaveSortingEnabled();
 
     uint256[] memory proposalIds = currentContest.getAllProposalIds();
     uint256 numDeletedProposals = currentContest.getAllDeletedProposalIds().length;
@@ -158,7 +162,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
       uint256 forVotesOfCurrentRank = currentContest.sortedRanks(currentContest.getRankIndex(i));
       uint256 numProposalsWithRankIVotes = currentContest.getNumProposalsWithThisManyForVotes(forVotesOfCurrentRank);
       if (numProposalsWithRankIVotes > 1) revert JokeraceEligibility_NoTies(); // revert if a rank that a hat is to go to is tied
-      
+
       address candidate = getCandidate(currentContest, currentContest.getOnlyProposalIdWithThisManyForVotes(forVotesOfCurrentRank));
       eligibleWearersPerContest[candidate][address(currentContest)] = true;
 
