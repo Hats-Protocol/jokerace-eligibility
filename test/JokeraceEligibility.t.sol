@@ -10,9 +10,9 @@ import {
   deployModuleFactory,
   deployModuleInstance
 } from "lib/hats-module/src/utils/DeployFunctions.sol";
-import { GovernorSorting } from "jokerace/governance/extensions/GovernorSorting.sol";
+import { GovernorSorting } from "jokerace/governance/utils/GovernorSorting.sol";
+import { Governor } from "jokerace/governance/Governor.sol";
 import { Contest } from "jokerace/Contest.sol";
-import { IGovernor } from "jokerace/governance/IGovernor.sol";
 
 contract DeployImplementationTest is DeployImplementation, Test {
   // variables inherited from DeployImplementation script
@@ -204,32 +204,32 @@ contract Proposing1Scenario is TestSetup {
 
     // each candidate proposes and delegates to itself
     vm.prank(candidate1);
-    IGovernor.ProposalCore memory proposal1 = IGovernor.ProposalCore({
+    Governor.ProposalCore memory proposal1 = Governor.ProposalCore({
       author: candidate1,
       description: "candidate 1 proposal",
       exists: true,
-      targetMetadata: IGovernor.TargetMetadata({ targetAddress: candidate1 }),
-      safeMetadata: IGovernor.SafeMetadata({ signers: signers1, threshold: 1 })
+      targetMetadata: Governor.TargetMetadata({ targetAddress: candidate1 }),
+      safeMetadata: Governor.SafeMetadata({ signers: signers1, threshold: 1 })
     });
     contest.proposeWithoutProof(proposal1);
 
     vm.prank(candidate2);
-    IGovernor.ProposalCore memory proposal2 = IGovernor.ProposalCore({
+    Governor.ProposalCore memory proposal2 = Governor.ProposalCore({
       author: candidate2,
       description: "candidate 2 proposal",
       exists: true,
-      targetMetadata: IGovernor.TargetMetadata({ targetAddress: candidate2 }),
-      safeMetadata: IGovernor.SafeMetadata({ signers: signers2, threshold: 1 })
+      targetMetadata: Governor.TargetMetadata({ targetAddress: candidate2 }),
+      safeMetadata: Governor.SafeMetadata({ signers: signers2, threshold: 1 })
     });
     contest.proposeWithoutProof(proposal2);
 
     vm.prank(candidate3);
-    IGovernor.ProposalCore memory proposal3 = IGovernor.ProposalCore({
+    Governor.ProposalCore memory proposal3 = Governor.ProposalCore({
       author: candidate3,
       description: "candidate 3 proposal",
       exists: true,
-      targetMetadata: IGovernor.TargetMetadata({ targetAddress: candidate3 }),
-      safeMetadata: IGovernor.SafeMetadata({ signers: signers3, threshold: 1 })
+      targetMetadata: Governor.TargetMetadata({ targetAddress: candidate3 }),
+      safeMetadata: Governor.SafeMetadata({ signers: signers3, threshold: 1 })
     });
     contest.proposeWithoutProof(proposal3);
 
@@ -248,12 +248,12 @@ contract Proposing2Scenario is TestSetup {
 
     // only one proposal
     vm.prank(candidate1);
-    IGovernor.ProposalCore memory proposal1 = IGovernor.ProposalCore({
+    Governor.ProposalCore memory proposal1 = Governor.ProposalCore({
       author: candidate1,
       description: "candidate 1 proposal",
       exists: true,
-      targetMetadata: IGovernor.TargetMetadata({ targetAddress: candidate1 }),
-      safeMetadata: IGovernor.SafeMetadata({ signers: signers1, threshold: 1 })
+      targetMetadata: Governor.TargetMetadata({ targetAddress: candidate1 }),
+      safeMetadata: Governor.SafeMetadata({ signers: signers1, threshold: 1 })
     });
     contest.proposeWithoutProof(proposal1);
 

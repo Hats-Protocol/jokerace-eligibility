@@ -7,7 +7,7 @@ import { IHatsEligibility } from "hats-protocol/Interfaces/IHatsEligibility.sol"
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
 import { HatsEligibilityModule, HatsModule } from "hats-module/HatsEligibilityModule.sol";
 import { GovernorCountingSimple } from "jokerace/governance/extensions/GovernorCountingSimple.sol";
-import { IGovernor } from "jokerace/governance/IGovernor.sol";
+import { Governor } from "jokerace/governance/Governor.sol";
 
 contract JokeraceEligibility is HatsEligibilityModule {
   /*//////////////////////////////////////////////////////////////
@@ -145,7 +145,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
   function pullElectionResults() public {
     GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
 
-    if (currentContest.state() != IGovernor.ContestState.Completed) revert JokeraceEligibility_ContestNotCompleted();
+    if (currentContest.state() != Governor.ContestState.Completed) revert JokeraceEligibility_ContestNotCompleted();
     if (currentContest.downvotingAllowed() == 1) revert JokeraceEligibility_MustHaveDownvotingDisabled();
     if (currentContest.sortingEnabled() == 0) revert JokeraceEligibility_MustHaveSortingEnabled();
 
@@ -207,7 +207,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /// @notice Check if setting a new election is allowed.
   function reelectionAllowed() public view returns (bool allowed) {
     allowed = block.timestamp >= termEnd
-      || GovernorCountingSimple(payable(underlyingContest)).state() == IGovernor.ContestState.Canceled;
+      || GovernorCountingSimple(payable(underlyingContest)).state() == Governor.ContestState.Canceled;
   }
 
   /*//////////////////////////////////////////////////////////////
