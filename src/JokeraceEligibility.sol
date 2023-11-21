@@ -6,8 +6,8 @@ pragma solidity ^0.8.19;
 import { IHatsEligibility } from "hats-protocol/Interfaces/IHatsEligibility.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
 import { HatsEligibilityModule, HatsModule } from "hats-module/HatsEligibilityModule.sol";
-import { GovernorSorting } from "jokerace/governance/extensions/GovernorSorting.sol";
-import { IGovernor } from "jokerace/governance/IGovernor.sol";
+import { GovernorCountingSimple } from "jokerace/governance/extensions/GovernorCountingSimple.sol";
+import { Governor } from "jokerace/governance/Governor.sol";
 
 contract JokeraceEligibility is HatsEligibilityModule {
   /*//////////////////////////////////////////////////////////////
@@ -22,6 +22,10 @@ contract JokeraceEligibility is HatsEligibilityModule {
   error JokeraceEligibility_NoTies();
   /// @notice Indicates that the caller doesn't have admin permsissions
   error JokeraceEligibility_NotAdmin();
+  /// @notice Indicates that downvoting must be enabled on the underlying contest to be able to get rankings
+  error JokeraceEligibility_MustHaveDownvotingDisabled();
+  /// @notice Indicates that downvoting must be enabled on the underlying contest to be able to get rankings
+  error JokeraceEligibility_MustHaveSortingEnabled();
 
   /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -139,43 +143,47 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * Additionally, negative scores are also counted as valid scores.
    */
   function pullElectionResults() public {
-    GovernorSorting currentContest = GovernorSorting(payable(underlyingContest));
+    GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
 
-    if (currentContest.state() != IGovernor.ContestState.Completed) {
+    if (currentContest.state() != Governor.ContestState.Completed) {
       revert JokeraceEligibility_ContestNotCompleted();
     }
-
-    // sorted in ascending order
-    uint256[] memory sortedProposalIds = currentContest.sortedProposals(true);
-    uint256 numProposals = sortedProposalIds.length;
-    uint256 numEligibleWearers;
-
-    uint256 k = topK; // save SLOADs
-
-    // check if there's a tie between place k and k + 1. If so, election results are rejected
-    if (numProposals > k) {
-      numEligibleWearers = k;
-      // get the score of candidate in place K
-      uint256 placeK = numProposals - k; // only do this operation once
-      int256 totalVotesPlaceK = getTotalVotes(currentContest, sortedProposalIds[placeK]);
-      // get the score of candidate in place K + 1
-      int256 totalVotesPlaceKPlusOne = getTotalVotes(currentContest, sortedProposalIds[placeK - 1]);
-
-      if (totalVotesPlaceK == totalVotesPlaceKPlusOne) {
-        revert JokeraceEligibility_NoTies();
-      }
-    } else {
-      numEligibleWearers = numProposals;
+    if (currentContest.downvotingAllowed() == 1) {
+      revert JokeraceEligibility_MustHaveDownvotingDisabled();
+    }
+    if (currentContest.sortingEnabled() == 0) {
+      revert JokeraceEligibility_MustHaveSortingEnabled();
     }
 
-    for (uint256 i; i < numEligibleWearers;) {
-      address candidate = getCandidate(currentContest, sortedProposalIds[numProposals - i - 1]);
-      eligibleWearersPerContest[candidate][address(currentContest)] = true;
+    uint256 k = topK;
+    uint256 winningProposalsCount = 0;
+    uint256 currentRank = 1;
+    bool processed = false;
+    while (!processed) {
+      try currentContest.getRankIndex(currentRank) returns (uint256 rankIndex) {
+        uint256 forVotesOfCurrentRank = currentContest.sortedRanks(rankIndex);
+        uint256[] memory proposalsOfCurrentRank = currentContest.forVotesToProposalIds(forVotesOfCurrentRank);
+        uint256 numProposalsWithCurrentRank = proposalsOfCurrentRank.length;
+        winningProposalsCount += numProposalsWithCurrentRank;
 
-      // should not overflow based on < numEligibleWearers stopping condition
-      unchecked {
-        ++i;
+        if (winningProposalsCount > k) {
+          termEnd = block.timestamp;
+          revert JokeraceEligibility_NoTies();
+        }
+
+        for (uint256 i; i < numProposalsWithCurrentRank;) {
+          address candidate = getCandidate(currentContest, proposalsOfCurrentRank[i]);
+          eligibleWearersPerContest[candidate][address(currentContest)] = true;
+
+          unchecked {
+            ++i;
+          }
+        }
+      } catch {
+        processed = true;
       }
+
+      currentRank += 1;
     }
   }
 
@@ -215,19 +223,19 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /// @notice Check if setting a new election is allowed.
   function reelectionAllowed() public view returns (bool allowed) {
     allowed = block.timestamp >= termEnd
-      || GovernorSorting(payable(underlyingContest)).state() == IGovernor.ContestState.Canceled;
+      || GovernorCountingSimple(payable(underlyingContest)).state() == Governor.ContestState.Canceled;
   }
 
   /*//////////////////////////////////////////////////////////////
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-  function getTotalVotes(GovernorSorting contest, uint256 proposalId) internal view returns (int256 totalVotes) {
+  function getTotalVotes(GovernorCountingSimple contest, uint256 proposalId) internal view returns (int256 totalVotes) {
     (uint256 forVotes, uint256 againstVotes) = contest.proposalVotes(proposalId);
     totalVotes = int256(forVotes) - int256(againstVotes);
   }
 
-  function getCandidate(GovernorSorting contest, uint256 proposalId) internal view returns (address candidate) {
+  function getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
     candidate = contest.getProposal(proposalId).author;
   }
 }
