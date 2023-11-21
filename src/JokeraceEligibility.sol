@@ -96,6 +96,15 @@ contract JokeraceEligibility is HatsEligibilityModule {
   function _setUp(bytes calldata _initData) internal override {
     (address payable _underlyingContest, uint256 _termEnd, uint256 _topK) =
       abi.decode(_initData, (address, uint256, uint256));
+
+    GovernorCountingSimple contest = GovernorCountingSimple(payable(_underlyingContest));
+    if (contest.downvotingAllowed() == 1) {
+      revert JokeraceEligibility_MustHaveDownvotingDisabled();
+    }
+    if (contest.sortingEnabled() == 0) {
+      revert JokeraceEligibility_MustHaveSortingEnabled();
+    }
+
     // initialize the mutable state vars
     underlyingContest = _underlyingContest;
     termEnd = _termEnd;
@@ -148,12 +157,6 @@ contract JokeraceEligibility is HatsEligibilityModule {
     if (currentContest.state() != Governor.ContestState.Completed) {
       revert JokeraceEligibility_ContestNotCompleted();
     }
-    if (currentContest.downvotingAllowed() == 1) {
-      revert JokeraceEligibility_MustHaveDownvotingDisabled();
-    }
-    if (currentContest.sortingEnabled() == 0) {
-      revert JokeraceEligibility_MustHaveSortingEnabled();
-    }
 
     uint256 k = topK;
     uint256 winningProposalsCount = 0;
@@ -199,6 +202,14 @@ contract JokeraceEligibility is HatsEligibilityModule {
   function reelection(address newUnderlyingContest, uint256 newTermEnd, uint256 newTopK) public {
     if (!reelectionAllowed()) {
       revert JokeraceEligibility_TermNotCompleted();
+    }
+
+    GovernorCountingSimple newContest = GovernorCountingSimple(payable(newUnderlyingContest));
+    if (newContest.downvotingAllowed() == 1) {
+      revert JokeraceEligibility_MustHaveDownvotingDisabled();
+    }
+    if (newContest.sortingEnabled() == 0) {
+      revert JokeraceEligibility_MustHaveSortingEnabled();
     }
 
     uint256 admin = ADMIN_HAT();

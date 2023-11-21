@@ -165,13 +165,6 @@ contract TestSetup is DeployImplementationTest {
       winnersHat, optionalAdminHat, address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2
     );
 
-    instanceWithDownVoting = deployInstance(
-      winnersHat, uint256(1), address(contestWithDownVoting), contestStart + voteDelay + votePeriod + termPeriod, 2
-    );
-    instancewithSortingDisabled = deployInstance(
-      winnersHat, uint256(2), address(contestWithSortingDisabled), contestStart + voteDelay + votePeriod + termPeriod, 2
-    );
-
     // update winners hat eligibilty to instance
     vm.prank(dao);
     HATS.changeHatEligibility(winnersHat, address(instanceDefaultAdmin));
@@ -458,25 +451,30 @@ contract TestTermEndedVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sce
 }
 
 contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Scenario {
+  address public newContest;
+
   function setUp() public virtual override {
     super.setUp();
     // deploy a new contest
     contestStart = block.timestamp;
-    args.push(contestStart);
-    args.push(voteDelay);
-    args.push(votePeriod);
-    args.push(contestStart);
-    args.push(0);
-    args.push(50);
-    args.push(50);
-    args.push(1);
-    args.push(1);
-    contest = new Contest("test contest reelection", "contest reelection", bytes32(0), votingMerkleRoot, args);
+    uint256[] memory newContestArgs = new uint256[](10);
+    newContestArgs[0] = contestStart;
+    newContestArgs[1] = voteDelay;
+    newContestArgs[2] = votePeriod;
+    newContestArgs[3] = 50;
+    newContestArgs[4] = 50;
+    newContestArgs[5] = 0;
+    newContestArgs[6] = 0;
+    newContestArgs[7] = 0;
+    newContestArgs[8] = 1;
+    newContestArgs[9] = 250;
+    newContest = address(
+      new Contest("test contest reelection", "contest reelection", bytes32(0), votingMerkleRoot, newContestArgs)
+    );
   }
 
   function test_reelection() public {
     vm.prank(dao);
-    address newContest = makeAddr("newContest");
     uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
     uint256 newTopK = 5;
     instanceDefaultAdmin.reelection(newContest, newTermEnd, newTopK);
@@ -515,7 +513,9 @@ contract TestContestWithDownVoting is TestSetup {
 
   function test_pullElectionResults_reverts() public {
     vm.expectRevert(JokeraceEligibility_MustHaveDownvotingDisabled.selector);
-    instanceWithDownVoting.pullElectionResults();
+    deployInstance(
+      winnersHat, uint256(1), address(contestWithDownVoting), contestStart + voteDelay + votePeriod + termPeriod, 2
+    );
   }
 }
 
@@ -528,6 +528,8 @@ contract TestContestWithSortingDisabled is TestSetup {
 
   function test_pullElectionResults_reverts() public {
     vm.expectRevert(JokeraceEligibility_MustHaveSortingEnabled.selector);
-    instancewithSortingDisabled.pullElectionResults();
+    deployInstance(
+      winnersHat, uint256(1), address(contestWithSortingDisabled), contestStart + voteDelay + votePeriod + termPeriod, 2
+    );
   }
 }
