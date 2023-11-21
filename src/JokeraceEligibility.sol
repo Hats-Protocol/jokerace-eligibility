@@ -162,16 +162,16 @@ contract JokeraceEligibility is HatsEligibilityModule {
     while (!processed) {
       try currentContest.getRankIndex(currentRank) returns (uint256 rankIndex) {
         uint256 forVotesOfCurrentRank = currentContest.sortedRanks(rankIndex);
-        uint256[] memory proposalsOfCurrentRank = currentContest.forVotesToProposalIds(forVotesOfCurrentRank);
-        uint256 numProposalsWithCurrentRank = proposalsOfCurrentRank.length;
-        winningProposalsCount += numProposalsWithCurrentRank;
+        uint256[] memory proposalsOfCurrentRank = currentContest.getProposalsWithThisManyForVotes(forVotesOfCurrentRank);
+        uint256 numProposalsOfCurrentRank = proposalsOfCurrentRank.length;
+        winningProposalsCount += numProposalsOfCurrentRank;
 
         if (winningProposalsCount > k) {
           termEnd = block.timestamp;
           revert JokeraceEligibility_NoTies();
         }
 
-        for (uint256 i; i < numProposalsWithCurrentRank;) {
+        for (uint256 i; i < numProposalsOfCurrentRank;) {
           address candidate = getCandidate(currentContest, proposalsOfCurrentRank[i]);
           eligibleWearersPerContest[candidate][address(currentContest)] = true;
 
@@ -179,11 +179,15 @@ contract JokeraceEligibility is HatsEligibilityModule {
             ++i;
           }
         }
+
+        if (winningProposalsCount == k) {
+          processed = true;
+        }
+
+        currentRank += 1;
       } catch {
         processed = true;
       }
-
-      currentRank += 1;
     }
   }
 
