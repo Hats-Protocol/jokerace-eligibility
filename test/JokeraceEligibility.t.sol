@@ -40,10 +40,14 @@ contract TestSetup is DeployImplementationTest {
   error JokeraceEligibility_TermNotCompleted();
   error JokeraceEligibility_NoTies();
   error JokeraceEligibility_NotAdmin();
+  error JokeraceEligibility_MustHaveDownvotingDisabled();
+  error JokeraceEligibility_MustHaveSortingEnabled();
 
   HatsModuleFactory constant FACTORY = HatsModuleFactory(0xfE661c01891172046feE16D3a57c3Cf456729efA);
   JokeraceEligibility public instanceDefaultAdmin;
   JokeraceEligibility public instanceHatAdmin;
+  JokeraceEligibility public instanceWithDownVoting;
+  JokeraceEligibility public instancewithSortingDisabled;
   bytes public otherImmutableArgs;
   bytes public initData;
   uint256 public tophat;
@@ -68,6 +72,8 @@ contract TestSetup is DeployImplementationTest {
   address[] signers2 = [candidate2];
   address[] signers3 = [candidate3];
   Contest contest;
+  Contest contestWithDownVoting;
+  Contest contestWithSortingDisabled;
   //GenericVotesTimestampToken token;
   uint256[] args;
   uint256 contestStart;
@@ -113,7 +119,7 @@ contract TestSetup is DeployImplementationTest {
   function setUp() public virtual override {
     super.setUp();
     contestStart = block.timestamp;
-    // set up a contest
+    // set up a contest with sorting enabled and without down voting
     leaf1 = keccak256(abi.encodePacked(candidate1, uint256(100)));
     leaf2 = keccak256(abi.encodePacked(candidate2, uint256(100)));
     leaf3 = keccak256(abi.encodePacked(candidate3, uint256(100)));
@@ -132,6 +138,16 @@ contract TestSetup is DeployImplementationTest {
     args.push(1);
     args.push(250);
     contest = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
+
+    // set up a contest with sorting enabled and with down voting
+    args[5] = 1;
+    contestWithDownVoting = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
+
+    // set up a contest with sorting disabled and without down voting
+    args[5] = 0;
+    args[8] = 0;
+    contestWithSortingDisabled = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
+
     // set up hats
     tophat = HATS.mintTopHat(dao, "tophat", "dao.eth/tophat");
     vm.startPrank(dao);
@@ -148,6 +164,14 @@ contract TestSetup is DeployImplementationTest {
     instanceHatAdmin = deployInstance(
       winnersHat, optionalAdminHat, address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2
     );
+
+    instanceWithDownVoting = deployInstance(
+      winnersHat, uint256(1), address(contestWithDownVoting), contestStart + voteDelay + votePeriod + termPeriod, 2
+    );
+    instancewithSortingDisabled = deployInstance(
+      winnersHat, uint256(2), address(contestWithSortingDisabled), contestStart + voteDelay + votePeriod + termPeriod, 2
+    );
+
     // update winners hat eligibilty to instance
     vm.prank(dao);
     HATS.changeHatEligibility(winnersHat, address(instanceDefaultAdmin));
@@ -479,5 +503,31 @@ contract TestReelectionHatAdmin is TestSetup {
   function test_reelectionDefaultAdmin() public {
     vm.prank(optionalAdmin);
     instanceHatAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+  }
+}
+
+contract TestContestWithDownVoting is TestSetup {
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
+  }
+
+  function test_pullElectionResults_reverts() public {
+    vm.expectRevert(JokeraceEligibility_MustHaveDownvotingDisabled.selector);
+    instanceWithDownVoting.pullElectionResults();
+  }
+}
+
+contract TestContestWithSortingDisabled is TestSetup {
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
+  }
+
+  function test_pullElectionResults_reverts() public {
+    vm.expectRevert(JokeraceEligibility_MustHaveSortingEnabled.selector);
+    instancewithSortingDisabled.pullElectionResults();
   }
 }
