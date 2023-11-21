@@ -84,13 +84,12 @@ contract JokeraceEligibility is HatsEligibilityModule {
     //////////////////////////////////////////////////////////////*/
 
   /**
-   * @notice Sets up this instance with initial operational values
+   * @notice Sets up this instance with initial operational values.
    * @dev Only callable by the hats-module factory. Since the factory only calls this function during a new deployment,
-   * this ensures
-   * it can only be called once per instance, and that the implementation contract is never initialized.
+   * this ensures it can only be called once per instance, and that the implementation contract is never initialized.
    * @param _initData Packed initialization data with the following parameters:
-   *  _underlyingContest - Jokerace contest
-   *  _termEnd - Final second of the current term (a unix timestamp), i.e. the point at which hats become inactive
+   *  _underlyingContest - Jokerace contest. The contest must have down-voting disabled and sorting enabled.
+   *  _termEnd - Final second of the current term (a unix timestamp)
    *  _topK - First K winners of the contest will be eligible
    */
   function _setUp(bytes calldata _initData) internal override {
@@ -125,9 +124,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
   /**
    * @notice Check if a wearer is eligible for a given hat according to the current term contest.
-   * @dev The _hatId parameter is not used. This module is tied to a specific hat at creation and checks eligibility
-   * according to the current contest that is set. Additionally, this module only checks for eligibility and returns
-   * good standing for all wearers.
+   * @dev The module only checks for eligibility and returns good standing for all wearers.
    */
   function getWearerStatus(address _wearer, uint256 /* _hatId */ )
     public
@@ -147,9 +144,9 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
   /**
    * @notice Pulls the contest results from the jokerace contest contract.
-   * @dev The eligible wearers for a given completed contest are the top K winners of the contract. In case there is a
-   * tie, meaning that candidates in places K and K+1 have the same score, then the results of this contest rejected.
-   * Additionally, negative scores are also counted as valid scores.
+   * @dev The eligible wearers for a given completed contest are the top K winners of the contest. In case there is a
+   * tie, meaning that candidates in places K and K+1 have the same score, then the results of this contest are
+   * rejected.
    */
   function pullElectionResults() public {
     GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
@@ -160,20 +157,24 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
     uint256 k = topK;
     uint256 winningProposalsCount = 0;
-    uint256 currentRank = 1;
+    uint256 currentRank = 1; // ranks start from '1' (the top-rank)
     bool processed = false;
     while (!processed) {
       try currentContest.getRankIndex(currentRank) returns (uint256 rankIndex) {
+        // get the score of the curent rank (amount of 'for' votes)
         uint256 forVotesOfCurrentRank = currentContest.sortedRanks(rankIndex);
+        // get the proposal IDs with the current score
         uint256[] memory proposalsOfCurrentRank = currentContest.getProposalsWithThisManyForVotes(forVotesOfCurrentRank);
         uint256 numProposalsOfCurrentRank = proposalsOfCurrentRank.length;
         winningProposalsCount += numProposalsOfCurrentRank;
 
+        // if there's a tie
         if (winningProposalsCount > k) {
-          termEnd = block.timestamp;
+          termEnd = block.timestamp; // update the term end so that reelection will be immediately possible
           revert JokeraceEligibility_NoTies();
         }
 
+        // get the authors of the proposals and update their eligibility
         for (uint256 i; i < numProposalsOfCurrentRank;) {
           address candidate = getCandidate(currentContest, proposalsOfCurrentRank[i]);
           eligibleWearersPerContest[candidate][address(currentContest)] = true;
@@ -189,13 +190,14 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
         currentRank += 1;
       } catch {
+        // if call reverted, then there are no more proposals to process
         processed = true;
       }
     }
   }
 
   /**
-   * @notice Sets a reelection, i.e. updates the contest for a new term.
+   * @notice Sets a reelection, i.e. updates the module with a new term.
    * @dev Only the module's admin/s have the permission to set a reelection. If an admin is not set at the module
    * creation, then any admin of hatId is considered an admin by the module.
    */
@@ -244,11 +246,6 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /*//////////////////////////////////////////////////////////////
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-  function getTotalVotes(GovernorCountingSimple contest, uint256 proposalId) internal view returns (int256 totalVotes) {
-    (uint256 forVotes, uint256 againstVotes) = contest.proposalVotes(proposalId);
-    totalVotes = int256(forVotes) - int256(againstVotes);
-  }
 
   function getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
     candidate = contest.getProposal(proposalId).author;
