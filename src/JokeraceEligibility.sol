@@ -94,7 +94,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
     (address payable _underlyingContest, uint256 _termEnd, uint256 _topK) =
       abi.decode(_initData, (address, uint256, uint256));
 
-    checkContestSupportsSorting(GovernorCountingSimple(_underlyingContest));
+    _checkContestSupportsSorting(GovernorCountingSimple(_underlyingContest));
 
     // initialize the mutable state vars
     underlyingContest = _underlyingContest;
@@ -166,7 +166,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
         // get the authors of the proposals and update their eligibility
         for (uint256 proposalIndex; proposalIndex < numProposalsOfCurrentRank;) {
-          address candidate = getCandidate(currentContest, proposalsOfCurrentRank[proposalIndex]);
+          address candidate = _getCandidate(currentContest, proposalsOfCurrentRank[proposalIndex]);
           eligibleWearersPerContest[candidate][address(currentContest)] = true;
 
           unchecked {
@@ -200,7 +200,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
       revert JokeraceEligibility_TermNotCompleted();
     }
 
-    checkContestSupportsSorting(GovernorCountingSimple(payable(newUnderlyingContest)));
+    _checkContestSupportsSorting(GovernorCountingSimple(payable(newUnderlyingContest)));
 
     uint256 admin = ADMIN_HAT();
     // if an admin hat is not set, then the Hats admins of hatId are granted the permission to set a reelection
@@ -235,11 +235,11 @@ contract JokeraceEligibility is HatsEligibilityModule {
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-  function getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
+  function _getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
     candidate = contest.getProposal(proposalId).author;
   }
 
-  function checkContestSupportsSorting(GovernorCountingSimple contest) internal view {
+  function _checkContestSupportsSorting(GovernorCountingSimple contest) internal view {
     if (contest.downvotingAllowed() == 1) {
       revert JokeraceEligibility_MustHaveDownvotingDisabled();
     }
