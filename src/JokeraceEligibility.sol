@@ -6,8 +6,8 @@ pragma solidity ^0.8.19;
 import { IHatsEligibility } from "hats-protocol/Interfaces/IHatsEligibility.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
 import { HatsEligibilityModule, HatsModule } from "hats-module/HatsEligibilityModule.sol";
-import { GovernorSorting } from "jokerace/governance/extensions/GovernorSorting.sol";
-import { IGovernor } from "jokerace/governance/IGovernor.sol";
+import { GovernorCountingSimple } from "jokerace/governance/extensions/GovernorCountingSimple.sol";
+import { Governor } from "jokerace/governance/Governor.sol";
 
 contract JokeraceEligibility is HatsEligibilityModule {
   /*//////////////////////////////////////////////////////////////
@@ -18,10 +18,12 @@ contract JokeraceEligibility is HatsEligibilityModule {
   error JokeraceEligibility_ContestNotCompleted();
   /// @notice Indicates that the current term is still on-going
   error JokeraceEligibility_TermNotCompleted();
-  /// @notice Indicates that top K election winners cannot be deduced because of a tie
-  error JokeraceEligibility_NoTies();
   /// @notice Indicates that the caller doesn't have admin permsissions
   error JokeraceEligibility_NotAdmin();
+  /// @notice Indicates that downvoting must be enabled on the underlying contest to be able to get rankings
+  error JokeraceEligibility_MustHaveDownvotingDisabled();
+  /// @notice Indicates that downvoting must be enabled on the underlying contest to be able to get rankings
+  error JokeraceEligibility_MustHaveSortingEnabled();
 
   /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -80,18 +82,20 @@ contract JokeraceEligibility is HatsEligibilityModule {
     //////////////////////////////////////////////////////////////*/
 
   /**
-   * @notice Sets up this instance with initial operational values
+   * @notice Sets up this instance with initial operational values.
    * @dev Only callable by the hats-module factory. Since the factory only calls this function during a new deployment,
-   * this ensures
-   * it can only be called once per instance, and that the implementation contract is never initialized.
+   * this ensures it can only be called once per instance, and that the implementation contract is never initialized.
    * @param _initData Packed initialization data with the following parameters:
-   *  _underlyingContest - Jokerace contest
-   *  _termEnd - Final second of the current term (a unix timestamp), i.e. the point at which hats become inactive
+   *  _underlyingContest - Jokerace contest. The contest must have down-voting disabled and sorting enabled.
+   *  _termEnd - Final second of the current term (a unix timestamp)
    *  _topK - First K winners of the contest will be eligible
    */
   function _setUp(bytes calldata _initData) internal override {
     (address payable _underlyingContest, uint256 _termEnd, uint256 _topK) =
       abi.decode(_initData, (address, uint256, uint256));
+
+    _checkContestSupportsSorting(GovernorCountingSimple(_underlyingContest));
+
     // initialize the mutable state vars
     underlyingContest = _underlyingContest;
     termEnd = _termEnd;
@@ -112,9 +116,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
   /**
    * @notice Check if a wearer is eligible for a given hat according to the current term contest.
-   * @dev The _hatId parameter is not used. This module is tied to a specific hat at creation and checks eligibility
-   * according to the current contest that is set. Additionally, this module only checks for eligibility and returns
-   * good standing for all wearers.
+   * @dev The module only checks for eligibility and returns good standing for all wearers.
    */
   function getWearerStatus(address _wearer, uint256 /* _hatId */ )
     public
@@ -134,53 +136,62 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
   /**
    * @notice Pulls the contest results from the jokerace contest contract.
-   * @dev The eligible wearers for a given completed contest are the top K winners of the contract. In case there is a
-   * tie, meaning that candidates in places K and K+1 have the same score, then the results of this contest rejected.
-   * Additionally, negative scores are also counted as valid scores.
+   * @dev The eligible wearers for a given completed contest are the top K winners of the contest. In case there is a
+   * tie, meaning that candidates in places K and K+1 have the same score, then the results of this contest are
+   * rejected.
    */
-  function pullElectionResults() public {
-    GovernorSorting currentContest = GovernorSorting(payable(underlyingContest));
+  function pullElectionResults() public returns (bool success) {
+    GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
 
-    if (currentContest.state() != IGovernor.ContestState.Completed) {
+    if (currentContest.state() != Governor.ContestState.Completed) {
       revert JokeraceEligibility_ContestNotCompleted();
     }
 
-    // sorted in ascending order
-    uint256[] memory sortedProposalIds = currentContest.sortedProposals(true);
-    uint256 numProposals = sortedProposalIds.length;
-    uint256 numEligibleWearers;
+    uint256 k = topK;
+    uint256 winningProposalsCount;
+    for (uint256 currentRank = 1; currentRank <= k;) {
+      try currentContest.getRankIndex(currentRank) returns (uint256 rankIndex) {
+        // get the score of the curent rank (amount of 'for' votes)
+        uint256 forVotesOfCurrentRank = currentContest.sortedRanks(rankIndex);
+        // get the proposal IDs with the current score
+        uint256[] memory proposalsOfCurrentRank = currentContest.getProposalsWithThisManyForVotes(forVotesOfCurrentRank);
+        uint256 numProposalsOfCurrentRank = proposalsOfCurrentRank.length;
+        winningProposalsCount += numProposalsOfCurrentRank;
 
-    uint256 k = topK; // save SLOADs
+        // if there's a tie
+        if (winningProposalsCount > k) {
+          termEnd = block.timestamp; // update the term end so that reelection will be immediately possible
+          return false;
+        }
 
-    // check if there's a tie between place k and k + 1. If so, election results are rejected
-    if (numProposals > k) {
-      numEligibleWearers = k;
-      // get the score of candidate in place K
-      uint256 placeK = numProposals - k; // only do this operation once
-      int256 totalVotesPlaceK = getTotalVotes(currentContest, sortedProposalIds[placeK]);
-      // get the score of candidate in place K + 1
-      int256 totalVotesPlaceKPlusOne = getTotalVotes(currentContest, sortedProposalIds[placeK - 1]);
+        // get the authors of the proposals and update their eligibility
+        for (uint256 proposalIndex; proposalIndex < numProposalsOfCurrentRank;) {
+          address candidate = _getCandidate(currentContest, proposalsOfCurrentRank[proposalIndex]);
+          eligibleWearersPerContest[candidate][address(currentContest)] = true;
 
-      if (totalVotesPlaceK == totalVotesPlaceKPlusOne) {
-        revert JokeraceEligibility_NoTies();
+          unchecked {
+            ++proposalIndex;
+          }
+        }
+
+        if (winningProposalsCount == k) {
+          break;
+        }
+
+        unchecked {
+          currentRank += 1;
+        }
+      } catch {
+        // if call reverted, then there are no more proposals to process
+        break;
       }
-    } else {
-      numEligibleWearers = numProposals;
     }
 
-    for (uint256 i; i < numEligibleWearers;) {
-      address candidate = getCandidate(currentContest, sortedProposalIds[numProposals - i - 1]);
-      eligibleWearersPerContest[candidate][address(currentContest)] = true;
-
-      // should not overflow based on < numEligibleWearers stopping condition
-      unchecked {
-        ++i;
-      }
-    }
+    return true;
   }
 
   /**
-   * @notice Sets a reelection, i.e. updates the contest for a new term.
+   * @notice Sets a reelection, i.e. updates the module with a new term.
    * @dev Only the module's admin/s have the permission to set a reelection. If an admin is not set at the module
    * creation, then any admin of hatId is considered an admin by the module.
    */
@@ -188,6 +199,8 @@ contract JokeraceEligibility is HatsEligibilityModule {
     if (!reelectionAllowed()) {
       revert JokeraceEligibility_TermNotCompleted();
     }
+
+    _checkContestSupportsSorting(GovernorCountingSimple(payable(newUnderlyingContest)));
 
     uint256 admin = ADMIN_HAT();
     // if an admin hat is not set, then the Hats admins of hatId are granted the permission to set a reelection
@@ -215,19 +228,23 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /// @notice Check if setting a new election is allowed.
   function reelectionAllowed() public view returns (bool allowed) {
     allowed = block.timestamp >= termEnd
-      || GovernorSorting(payable(underlyingContest)).state() == IGovernor.ContestState.Canceled;
+      || GovernorCountingSimple(payable(underlyingContest)).state() == Governor.ContestState.Canceled;
   }
 
   /*//////////////////////////////////////////////////////////////
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-  function getTotalVotes(GovernorSorting contest, uint256 proposalId) internal view returns (int256 totalVotes) {
-    (uint256 forVotes, uint256 againstVotes) = contest.proposalVotes(proposalId);
-    totalVotes = int256(forVotes) - int256(againstVotes);
+  function _getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
+    candidate = contest.getProposal(proposalId).author;
   }
 
-  function getCandidate(GovernorSorting contest, uint256 proposalId) internal view returns (address candidate) {
-    candidate = contest.getProposal(proposalId).author;
+  function _checkContestSupportsSorting(GovernorCountingSimple contest) internal view {
+    if (contest.downvotingAllowed() == 1) {
+      revert JokeraceEligibility_MustHaveDownvotingDisabled();
+    }
+    if (contest.sortingEnabled() == 0) {
+      revert JokeraceEligibility_MustHaveSortingEnabled();
+    }
   }
 }
