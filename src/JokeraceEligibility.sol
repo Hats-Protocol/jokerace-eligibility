@@ -18,8 +18,6 @@ contract JokeraceEligibility is HatsEligibilityModule {
   error JokeraceEligibility_ContestNotCompleted();
   /// @notice Indicates that the current term is still on-going
   error JokeraceEligibility_TermNotCompleted();
-  /// @notice Indicates that top K election winners cannot be deduced because of a tie
-  error JokeraceEligibility_NoTies();
   /// @notice Indicates that the caller doesn't have admin permsissions
   error JokeraceEligibility_NotAdmin();
   /// @notice Indicates that downvoting must be enabled on the underlying contest to be able to get rankings
@@ -96,13 +94,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
     (address payable _underlyingContest, uint256 _termEnd, uint256 _topK) =
       abi.decode(_initData, (address, uint256, uint256));
 
-    GovernorCountingSimple contest = GovernorCountingSimple(payable(_underlyingContest));
-    if (contest.downvotingAllowed() == 1) {
-      revert JokeraceEligibility_MustHaveDownvotingDisabled();
-    }
-    if (contest.sortingEnabled() == 0) {
-      revert JokeraceEligibility_MustHaveSortingEnabled();
-    }
+    checkContestSupportsSorting(GovernorCountingSimple(_underlyingContest));
 
     // initialize the mutable state vars
     underlyingContest = _underlyingContest;
@@ -148,7 +140,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * tie, meaning that candidates in places K and K+1 have the same score, then the results of this contest are
    * rejected.
    */
-  function pullElectionResults() public {
+  function pullElectionResults() public returns (bool success) {
     GovernorCountingSimple currentContest = GovernorCountingSimple(payable(underlyingContest));
 
     if (currentContest.state() != Governor.ContestState.Completed) {
@@ -156,10 +148,8 @@ contract JokeraceEligibility is HatsEligibilityModule {
     }
 
     uint256 k = topK;
-    uint256 winningProposalsCount = 0;
-    uint256 currentRank = 1; // ranks start from '1' (the top-rank)
-    bool processed = false;
-    while (!processed) {
+    uint256 winningProposalsCount;
+    for (uint256 currentRank = 1; currentRank <= k;) {
       try currentContest.getRankIndex(currentRank) returns (uint256 rankIndex) {
         // get the score of the curent rank (amount of 'for' votes)
         uint256 forVotesOfCurrentRank = currentContest.sortedRanks(rankIndex);
@@ -171,29 +161,33 @@ contract JokeraceEligibility is HatsEligibilityModule {
         // if there's a tie
         if (winningProposalsCount > k) {
           termEnd = block.timestamp; // update the term end so that reelection will be immediately possible
-          revert JokeraceEligibility_NoTies();
+          return false;
         }
 
         // get the authors of the proposals and update their eligibility
-        for (uint256 i; i < numProposalsOfCurrentRank;) {
-          address candidate = getCandidate(currentContest, proposalsOfCurrentRank[i]);
+        for (uint256 proposalIndex; proposalIndex < numProposalsOfCurrentRank;) {
+          address candidate = getCandidate(currentContest, proposalsOfCurrentRank[proposalIndex]);
           eligibleWearersPerContest[candidate][address(currentContest)] = true;
 
           unchecked {
-            ++i;
+            ++proposalIndex;
           }
         }
 
         if (winningProposalsCount == k) {
-          processed = true;
+          break;
         }
 
-        currentRank += 1;
+        unchecked {
+          currentRank += 1;
+        }
       } catch {
         // if call reverted, then there are no more proposals to process
-        processed = true;
+        break;
       }
     }
+
+    return true;
   }
 
   /**
@@ -206,13 +200,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
       revert JokeraceEligibility_TermNotCompleted();
     }
 
-    GovernorCountingSimple newContest = GovernorCountingSimple(payable(newUnderlyingContest));
-    if (newContest.downvotingAllowed() == 1) {
-      revert JokeraceEligibility_MustHaveDownvotingDisabled();
-    }
-    if (newContest.sortingEnabled() == 0) {
-      revert JokeraceEligibility_MustHaveSortingEnabled();
-    }
+    checkContestSupportsSorting(GovernorCountingSimple(payable(newUnderlyingContest)));
 
     uint256 admin = ADMIN_HAT();
     // if an admin hat is not set, then the Hats admins of hatId are granted the permission to set a reelection
@@ -249,5 +237,14 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
   function getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
     candidate = contest.getProposal(proposalId).author;
+  }
+
+  function checkContestSupportsSorting(GovernorCountingSimple contest) internal view {
+    if (contest.downvotingAllowed() == 1) {
+      revert JokeraceEligibility_MustHaveDownvotingDisabled();
+    }
+    if (contest.sortingEnabled() == 0) {
+      revert JokeraceEligibility_MustHaveSortingEnabled();
+    }
   }
 }

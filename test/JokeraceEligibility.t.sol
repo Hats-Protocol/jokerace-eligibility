@@ -38,7 +38,6 @@ contract DeployImplementationTest is DeployImplementation, Test {
 contract TestSetup is DeployImplementationTest {
   error JokeraceEligibility_ContestNotCompleted();
   error JokeraceEligibility_TermNotCompleted();
-  error JokeraceEligibility_NoTies();
   error JokeraceEligibility_NotAdmin();
   error JokeraceEligibility_MustHaveDownvotingDisabled();
   error JokeraceEligibility_MustHaveSortingEnabled();
@@ -288,8 +287,8 @@ contract TestProposing1Scenario is Proposing1Scenario {
     instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
-// Candidates scoring: candidate 1 > candidate 2 > candidate 3
 
+// Candidates scoring: candidate 1 > candidate 2 > candidate 3
 contract Voting1Proposing1Scenario is Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -304,8 +303,8 @@ contract Voting1Proposing1Scenario is Proposing1Scenario {
     contest.castVote(proposalIds[2], 0, 100, 100, proof3);
   }
 }
-// Candidates scoring (tie between second and third place): candidate 1 > candidate 2 = candidate 3
 
+// Candidates scoring (tie between second and third place): candidate 1 > candidate 2 = candidate 3
 contract Voting2Proposing1Scenario is Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -341,18 +340,20 @@ contract TestVoting1Proposing1Scenario is Voting1Proposing1Scenario {
     instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
-// Contest completed with candidates 1 & 2 as winners
 
+// Contest completed with candidates 1 & 2 as winners
 contract ContestCompletedVoting1Proposing1Scenario is Voting1Proposing1Scenario {
+  bool pullElectionResultsSuccees;
+
   function setUp() public virtual override {
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + 1);
-    instanceDefaultAdmin.pullElectionResults();
+    pullElectionResultsSuccees = instanceDefaultAdmin.pullElectionResults();
   }
 }
-// Contest completed with a tie (should not accept ties)
 
+// Contest completed with a tie (should not accept ties)
 contract ContestCompletedVoting2Proposing1Scenario is Voting2Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -360,8 +361,8 @@ contract ContestCompletedVoting2Proposing1Scenario is Voting2Proposing1Scenario 
     vm.warp(contestStart + voteDelay + votePeriod + 1);
   }
 }
-// Contest completed with only one candidate, which is less than topK (2)
 
+// Contest completed with only one candidate, which is less than topK (2)
 contract ContestCompletedProposing2Scenario is Proposing2Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -389,13 +390,18 @@ contract TestContestCompletedProposing2Scenario is ContestCompletedProposing2Sce
 }
 
 contract TestContestCompletedVoting2Proposing1Scenario is ContestCompletedVoting2Proposing1Scenario {
-  function test_pullResults_reverts() public {
-    vm.expectRevert(JokeraceEligibility_NoTies.selector);
-    instanceDefaultAdmin.pullElectionResults();
+  function test_pullElectionResults() public {
+    bool success = instanceDefaultAdmin.pullElectionResults();
+    assertEq(success, false);
+    assertEq(instanceDefaultAdmin.termEnd(), block.timestamp);
   }
 }
 
 contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting1Proposing1Scenario {
+  function test_pullElectionResult() public {
+    assertEq(pullElectionResultsSuccees, true);
+  }
+
   function test_eligibilityInstance() public {
     (bool eligible1,) = instanceDefaultAdmin.getWearerStatus(candidate1, winnersHat);
     assertEq(eligible1, true, "candidate 1 eligibility");
@@ -416,8 +422,8 @@ contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting
     instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
   }
 }
-// Current term ended, ready for reelection
 
+// Current term ended, ready for reelection
 contract TermEndedVoting1Proposing1Scenario is ContestCompletedVoting1Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
@@ -497,21 +503,39 @@ contract TestReelectionHatAdmin is TestSetup {
     instanceHatAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
     vm.stopPrank();
   }
+}
+
+contract TestReelectionDefaultAdmin is TestSetup {
+  address newContest;
+  uint256 newTermEnd;
+  uint256 newTopK;
+
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
+    newContest = address(contest);
+    newTermEnd = contestStart + voteDelay + votePeriod + termPeriod + 86_000;
+    newTopK = 5;
+    vm.prank(optionalAdmin);
+    instanceHatAdmin.reelection(newContest, newTermEnd, newTopK);
+  }
 
   function test_reelectionDefaultAdmin() public {
-    vm.prank(optionalAdmin);
-    instanceHatAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+    assertEq(address(instanceHatAdmin.underlyingContest()), newContest);
+    assertEq(instanceHatAdmin.topK(), newTopK);
+    assertEq(instanceHatAdmin.termEnd(), newTermEnd);
   }
 }
 
-contract TestContestWithDownVoting is TestSetup {
+contract TestSetupContestWithDownVoting is TestSetup {
   function setUp() public virtual override {
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
   }
 
-  function test_pullElectionResults_reverts() public {
+  function test_setUp_reverts() public {
     vm.expectRevert(JokeraceEligibility_MustHaveDownvotingDisabled.selector);
     deployInstance(
       winnersHat, uint256(1), address(contestWithDownVoting), contestStart + voteDelay + votePeriod + termPeriod, 2
@@ -519,17 +543,47 @@ contract TestContestWithDownVoting is TestSetup {
   }
 }
 
-contract TestContestWithSortingDisabled is TestSetup {
+contract TestSetupContestWithSortingDisabled is TestSetup {
   function setUp() public virtual override {
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
   }
 
-  function test_pullElectionResults_reverts() public {
+  function test_setUp_reverts() public {
     vm.expectRevert(JokeraceEligibility_MustHaveSortingEnabled.selector);
     deployInstance(
       winnersHat, uint256(1), address(contestWithSortingDisabled), contestStart + voteDelay + votePeriod + termPeriod, 2
     );
+  }
+}
+
+contract TestReelectionContestWithDownVoting is TestSetup {
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
+  }
+
+  function test_reelection_reverts() public {
+    vm.startPrank(dao);
+    vm.expectRevert(JokeraceEligibility_MustHaveDownvotingDisabled.selector);
+    instanceDefaultAdmin.reelection(address(contestWithDownVoting), block.timestamp + 86_400, 5);
+    vm.stopPrank();
+  }
+}
+
+contract TestReelectionContestWithSortingDisabled is TestSetup {
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
+  }
+
+  function test_reelection_reverts() public {
+    vm.startPrank(dao);
+    vm.expectRevert(JokeraceEligibility_MustHaveSortingEnabled.selector);
+    instanceDefaultAdmin.reelection(address(contestWithSortingDisabled), block.timestamp + 86_400, 5);
+    vm.stopPrank();
   }
 }
