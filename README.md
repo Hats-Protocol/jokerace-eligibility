@@ -6,11 +6,13 @@ contest results. More specifically, the module supports multiple terms, each
 defined by:
 
 - A Jokerace contest.
-- The number of winners in the contest (top K with highest score).
+- The number of winners in the contest (top K authors of the proposals with the highest score).
 - The term duration, starting from the contest completion.
 
 Each module instance has its admin/s which can set a reelection (new term),
 once the current term has ended.
+
+**NOTE**: Proposals ranking is only supported in Jokerace contests with down-voting disabled. Thus only contests with down-voting disabled are supported by this module.
 
 ## JokeraceEligibility Details
 
@@ -31,7 +33,7 @@ various ways.
 - `hatId`: The id of the hat to which this instance will be attached as an
   eligibility module, passed as itself
 - `ADMIN_HAT`: The id of the admin hat which can set reelections (new terms).
-  If set to zero, then the default admins are hatsId's admins in Hats.
+  If set to zero, then the default admins are hatId's admins in Hats.
   The parameter is abi-encoded (packed) and passed as `_otherImmutableArgs`
 
 The following immutable values will also automatically be set within the
@@ -61,11 +63,11 @@ function in order to pull its results and update the eligible wearers for the
 current term. The eligible wearers are the authors of the `topK` proposals
 with the highest scores.
 
-**NOTE**: Negative or zero scores are also counted as valid.
+**NOTE**: Zero scores are not valid, meaning that proposals with a score of zero cannot be part of the top K winners.
 
 **NOTE**: In case there are no definite K winners, meaning that there is a tie
 between place K and K+1, then the term is considered invalid and no candidate
-will be eligible.
+will be eligible. In this case, the module's admin/s can set a new election.
 
 ### Reelection
 
