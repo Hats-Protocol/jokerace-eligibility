@@ -13,8 +13,8 @@ defined by:
 Each module instance has its admin/s which can set a reelection (new term),
 once the current term has ended.
 
-**NOTE**: Proposals ranking is only supported in Jokerace contests with 
-down-voting disabled. Thus only contests with down-voting disabled are 
+**NOTE**: Proposals ranking is only supported in Jokerace contests with
+down-voting disabled. Thus only contests with down-voting disabled are
 supported by this module.
 
 ## JokeraceEligibility Details
