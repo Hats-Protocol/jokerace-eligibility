@@ -26,7 +26,7 @@ contract DeployImplementation is Script {
     address deployer = vm.rememberKey(privKey);
     vm.startBroadcast(deployer);
 
-    implementation = new JokeraceEligibility{ salt: SALT}(version);
+    implementation = new JokeraceEligibility{ salt: SALT }(version);
 
     vm.stopBroadcast();
 
