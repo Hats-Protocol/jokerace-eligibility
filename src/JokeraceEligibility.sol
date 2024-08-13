@@ -30,7 +30,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
     //////////////////////////////////////////////////////////////*/
 
   /// @notice Emitted when a reelection is set
-  event NewTerm(address NewContest, uint256 newTopK, uint256 newTermEnd);
+  event NewTerm(address NewContest, uint256 newTopK, uint256 newTermEnd, uint256 newTransitionPeriod);
 
   /*//////////////////////////////////////////////////////////////
                           PUBLIC  CONSTANTS
@@ -95,6 +95,8 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * @param _initData Packed initialization data with the following parameters:
    *  _contest - Jokerace contest. The contest must have down-voting disabled and sorting enabled.
    *  _termEnd - Final second of the current term (a unix timestamp)
+   *  _transitionPeriod - Period of time after the term end when calling reelection is allowed and previous elected are
+   * still eligibile as long as reelection was not called
    *  _topK - First K winners of the contest will be eligible
    */
   function _setUp(bytes calldata _initData) internal override {
@@ -149,20 +151,20 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * rejected.
    */
   function pullElectionResults() public returns (bool success) {
-    GovernorCountingSimple currentContest = GovernorCountingSimple(payable(currentContest));
+    GovernorCountingSimple contest = GovernorCountingSimple(payable(nextContest));
 
-    if (currentContest.state() != Governor.ContestState.Completed) {
+    if (contest.state() != Governor.ContestState.Completed) {
       revert JokeraceEligibility_ContestNotCompleted();
     }
 
     uint256 k = topK;
     uint256 winningProposalsCount;
     for (uint256 currentRank = 1; currentRank <= k;) {
-      try currentContest.getRankIndex(currentRank) returns (uint256 rankIndex) {
+      try contest.getRankIndex(currentRank) returns (uint256 rankIndex) {
         // get the score of the curent rank (amount of 'for' votes)
-        uint256 forVotesOfCurrentRank = currentContest.sortedRanks(rankIndex);
+        uint256 forVotesOfCurrentRank = contest.sortedRanks(rankIndex);
         // get the proposal IDs with the current score
-        uint256[] memory proposalsOfCurrentRank = currentContest.getProposalsWithThisManyForVotes(forVotesOfCurrentRank);
+        uint256[] memory proposalsOfCurrentRank = contest.getProposalsWithThisManyForVotes(forVotesOfCurrentRank);
         uint256 numProposalsOfCurrentRank = proposalsOfCurrentRank.length;
         winningProposalsCount += numProposalsOfCurrentRank;
 
@@ -175,8 +177,8 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
         // get the authors of the proposals and update their eligibility
         for (uint256 proposalIndex; proposalIndex < numProposalsOfCurrentRank;) {
-          address candidate = _getCandidate(currentContest, proposalsOfCurrentRank[proposalIndex]);
-          eligibleWearersPerContest[candidate][address(currentContest)] = true;
+          address candidate = _getCandidate(contest, proposalsOfCurrentRank[proposalIndex]);
+          eligibleWearersPerContest[candidate][address(contest)] = true;
 
           unchecked {
             ++proposalIndex;
@@ -196,7 +198,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
       }
     }
 
-    currentContest = nextContest;
+    currentContest = address(contest);
     nextContest = address(0);
     return true;
   }
@@ -206,7 +208,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * @dev Only the module's admin/s have the permission to set a reelection. If an admin is not set at the module
    * creation, then any admin of hatId is considered an admin by the module.
    */
-  function reelection(address newContest, uint256 newTermEnd, uint256 newTopK) public {
+  function reelection(address newContest, uint256 newTermEnd, uint256 newTransitionPeriod, uint256 newTopK) public {
     if (!reelectionAllowed()) {
       revert JokeraceEligibility_TermNotCompleted();
     }
@@ -227,9 +229,10 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
     nextContest = newContest;
     termEnd = newTermEnd;
+    transitionPeriod = newTransitionPeriod;
     topK = newTopK;
 
-    emit NewTerm(newContest, newTopK, newTermEnd);
+    emit NewTerm(newContest, newTopK, newTermEnd, newTransitionPeriod);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -239,7 +242,10 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /// @notice Check if setting a new election is allowed.
   function reelectionAllowed() public view returns (bool allowed) {
     allowed = block.timestamp >= termEnd
-      || GovernorCountingSimple(payable(currentContest)).state() == Governor.ContestState.Canceled;
+      || (
+        currentContest != address(0)
+          && GovernorCountingSimple(payable(currentContest)).state() == Governor.ContestState.Canceled
+      );
   }
 
   /*//////////////////////////////////////////////////////////////
