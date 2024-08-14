@@ -42,6 +42,9 @@ contract TestSetup is DeployImplementationTest {
   error JokeraceEligibility_MustHaveDownvotingDisabled();
   error JokeraceEligibility_MustHaveSortingEnabled();
 
+  event NewTerm(address NewContest, uint256 newTopK, uint256 newTermEnd, uint256 newTransitionPeriod);
+  event ElectionResultsPulled(address NewContest, bool isTie);
+
   HatsModuleFactory constant FACTORY = HatsModuleFactory(0xfE661c01891172046feE16D3a57c3Cf456729efA);
   JokeraceEligibility public instanceDefaultAdmin;
   JokeraceEligibility public instanceHatAdmin;
@@ -73,6 +76,7 @@ contract TestSetup is DeployImplementationTest {
   Contest contest;
   Contest contestWithDownVoting;
   Contest contestWithSortingDisabled;
+  Contest contestCanceled;
   //GenericVotesTimestampToken token;
   uint256[] args;
   uint256 contestStart;
@@ -143,6 +147,10 @@ contract TestSetup is DeployImplementationTest {
     args.push(1);
     args.push(250);
     contest = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
+
+    // set up a contest and cancel it
+    contestCanceled = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
+    contestCanceled.cancel();
 
     // set up a contest with sorting enabled and with down voting
     args[5] = 1;
@@ -373,6 +381,8 @@ contract ContestCompletedVoting1Proposing1Scenario is Voting1Proposing1Scenario 
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + 1);
+    vm.expectEmit();
+    emit ElectionResultsPulled(address(contest), false);
     pullElectionResultsSuccees = instanceDefaultAdmin.pullElectionResults();
   }
 }
@@ -392,6 +402,8 @@ contract ContestCompletedProposing2Scenario is Proposing2Scenario {
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + 1);
+    vm.expectEmit();
+    emit ElectionResultsPulled(address(contest), false);
     instanceDefaultAdmin.pullElectionResults();
   }
 }
@@ -415,6 +427,8 @@ contract TestContestCompletedProposing2Scenario is ContestCompletedProposing2Sce
 
 contract TestContestCompletedVoting2Proposing1Scenario is ContestCompletedVoting2Proposing1Scenario {
   function test_pullElectionResults() public {
+    vm.expectEmit();
+    emit ElectionResultsPulled(address(contest), true);
     bool success = instanceDefaultAdmin.pullElectionResults();
     assertEq(success, false);
     assertEq(instanceDefaultAdmin.termEnd(), block.timestamp);
@@ -514,6 +528,35 @@ contract TestTransitionPeriodEndedVoting1Proposing1Scenario is TransitionPeriodE
   }
 }
 
+// Transition period ended, no reelection, previous elected should not be eligible anymore
+contract NextContestCanceledVoting1Proposing1Scenario is TermEndedVoting1Proposing1Scenario {
+  function setUp() public virtual override {
+    super.setUp();
+    uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
+    uint256 newTopK = 5;
+    vm.prank(dao);
+    vm.expectEmit();
+    emit NewTerm(address(contestCanceled), newTopK, newTermEnd, transitionPeriod);
+    instanceDefaultAdmin.reelection(address(contestCanceled), newTermEnd, transitionPeriod, newTopK);
+  }
+}
+
+contract TestNextContestCanceledVoting1Proposing1Scenario is NextContestCanceledVoting1Proposing1Scenario {
+  function test_canSetNewElection() public {
+    vm.prank(dao);
+    uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
+    uint256 newTopK = 5;
+    vm.expectEmit();
+    emit NewTerm(address(contest), newTopK, newTermEnd, transitionPeriod2);
+    instanceDefaultAdmin.reelection(address(contest), newTermEnd, transitionPeriod2, newTopK);
+    assertEq(address(instanceDefaultAdmin.nextContest()), address(contest));
+    assertEq(address(instanceDefaultAdmin.currentContest()), address(contest));
+    assertEq(instanceDefaultAdmin.topK(), newTopK);
+    assertEq(instanceDefaultAdmin.termEnd(), newTermEnd);
+    assertEq(instanceDefaultAdmin.transitionPeriod(), transitionPeriod2);
+  }
+}
+
 contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Scenario {
   address public newContest;
 
@@ -541,6 +584,8 @@ contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sc
     vm.prank(dao);
     uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
     uint256 newTopK = 5;
+    vm.expectEmit();
+    emit NewTerm(address(newContest), newTopK, newTermEnd, transitionPeriod2);
     instanceDefaultAdmin.reelection(newContest, newTermEnd, transitionPeriod2, newTopK);
     assertEq(address(instanceDefaultAdmin.nextContest()), address(newContest));
     assertEq(address(instanceDefaultAdmin.currentContest()), address(contest));
@@ -580,6 +625,8 @@ contract TestReelectionDefaultAdmin is TestSetup {
     newTermEnd = contestStart + voteDelay + votePeriod + termPeriod + 86_000;
     newTopK = 5;
     vm.prank(optionalAdmin);
+    vm.expectEmit();
+    emit NewTerm(address(newContest), newTopK, newTermEnd, transitionPeriod);
     instanceHatAdmin.reelection(newContest, newTermEnd, transitionPeriod, newTopK);
   }
 

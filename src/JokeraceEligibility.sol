@@ -32,7 +32,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
   /// @notice Emitted when a reelection is set
   event NewTerm(address NewContest, uint256 newTopK, uint256 newTermEnd, uint256 newTransitionPeriod);
   /// @notice Emitted when election's results are pulled
-  event ElectionResultsPulled(address NewContest);
+  event ElectionResultsPulled(address NewContest, bool isTie);
 
   /*//////////////////////////////////////////////////////////////
                           PUBLIC  CONSTANTS
@@ -174,6 +174,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
         if (winningProposalsCount > k) {
           termEnd = block.timestamp; // update the term end so that reelection will be immediately possible
           nextContest = address(0);
+          emit ElectionResultsPulled(address(contest), true);
           return false;
         }
 
@@ -202,7 +203,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
     currentContest = address(contest);
     nextContest = address(0);
-    emit ElectionResultsPulled(address(contest));
+    emit ElectionResultsPulled(address(contest), false);
     return true;
   }
 
