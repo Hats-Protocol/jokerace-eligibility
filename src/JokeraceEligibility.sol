@@ -31,6 +31,8 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
   /// @notice Emitted when a reelection is set
   event NewTerm(address NewContest, uint256 newTopK, uint256 newTermEnd, uint256 newTransitionPeriod);
+  /// @notice Emitted when election's results are pulled
+  event ElectionResultsPulled(address NewContest);
 
   /*//////////////////////////////////////////////////////////////
                           PUBLIC  CONSTANTS
@@ -200,6 +202,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
     currentContest = address(contest);
     nextContest = address(0);
+    emit ElectionResultsPulled(address(contest));
     return true;
   }
 
@@ -241,10 +244,15 @@ contract JokeraceEligibility is HatsEligibilityModule {
 
   /// @notice Check if setting a new election is allowed.
   function reelectionAllowed() public view returns (bool allowed) {
-    allowed = block.timestamp >= termEnd
+    // if the current term has ended
+    allowed = block.timestamp >= termEnd // or if the current contest was canceled
       || (
         currentContest != address(0)
           && GovernorCountingSimple(payable(currentContest)).state() == Governor.ContestState.Canceled
+      ) // or if we're in a transition period, and the next contest was canceled
+      || (
+        nextContest != address(0)
+          && GovernorCountingSimple(payable(nextContest)).state() == Governor.ContestState.Canceled
       );
   }
 

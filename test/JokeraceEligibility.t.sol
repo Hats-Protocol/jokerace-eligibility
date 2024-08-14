@@ -20,7 +20,7 @@ contract DeployImplementationTest is DeployImplementation, Test {
   // bytes32 public SALT;
 
   uint256 public fork;
-  uint256 public BLOCK_NUMBER = 6_488_268; // the block number where hats module factory was deployed on Goerli;
+  uint256 public BLOCK_NUMBER = 6_488_268; // the block number where hats module factory was deployed on Sepolia;
 
   IHats public constant HATS = IHats(0x3bc1A0Ad72417f2d411118085256fC53CBdDd137); // v1.hatsprotocol.eth
   string public FACTORY_VERSION = "factory test version";
