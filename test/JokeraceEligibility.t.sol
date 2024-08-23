@@ -231,6 +231,11 @@ contract TestDeployment is TestSetup {
       HATS.getHatEligibilityModule(winnersHat), address(instanceDefaultAdmin), "eligibility module of winners hat"
     );
   }
+
+  function test_canStartNextTerm() public {
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, false);
+  }
 }
 
 // Three candidates propose
@@ -393,6 +398,8 @@ contract ContestCompletedProposing2Scenario is Proposing2Scenario {
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + 1);
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, true);
     uint256 currentTermIndex = instanceDefaultAdmin.currentTermIndex();
     TermDetails memory nextTerm;
     (nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod) =
@@ -417,6 +424,11 @@ contract TestContestCompletedProposing2Scenario is ContestCompletedProposing2Sce
     assertEq(HATS.isEligible(candidate1, winnersHat), false, "candidate 1 eligibility");
     assertEq(HATS.isEligible(candidate2, winnersHat), false, "candidate 2 eligibility");
     assertEq(HATS.isEligible(candidate3, winnersHat), false, "candidate 3 eligibility");
+  }
+
+  function test_canStartNextTerm() public {
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, false);
   }
 }
 
@@ -479,12 +491,38 @@ contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting
   }
 }
 
+contract TestTermNotCompleted is ContestCompletedVoting1Proposing1Scenario {
+  function test_canStartNextTerm() public {
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, false);
+  }
+
+  function test_startNextTerm_reverts() public {
+    vm.prank(dao);
+    instanceDefaultAdmin.setNextTerm(address(contest), termEnd1 + 86_400, transitionPeriod, 3);
+    vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
+    instanceDefaultAdmin.startNextTerm();
+  }
+}
+
 // Current term ended, ready for reelection
 contract TermEndedVoting1Proposing1Scenario is ContestCompletedVoting1Proposing1Scenario {
   function setUp() public virtual override {
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
+  }
+}
+
+contract TestStartEmptyTerm is TermEndedVoting1Proposing1Scenario {
+  function test_canStartNextTerm() public {
+    vm.expectRevert();
+    instanceDefaultAdmin.canStartNextTerm();
+  }
+
+  function test_startNextTerm_reverts() public {
+    vm.expectRevert();
+    instanceDefaultAdmin.startNextTerm();
   }
 }
 
@@ -552,6 +590,11 @@ contract NextContestCanceledVoting1Proposing1Scenario is TermEndedVoting1Proposi
 }
 
 contract TestNextContestCanceledVoting1Proposing1Scenario is NextContestCanceledVoting1Proposing1Scenario {
+  function test_canStartNextTerm() public {
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, false);
+  }
+
   function test_startNextTerm_reverts() public {
     vm.expectRevert(JokeraceEligibility_ContestNotCompleted.selector);
     instanceDefaultAdmin.startNextTerm();
@@ -564,6 +607,8 @@ contract TestNextContestCanceledVoting1Proposing1Scenario is NextContestCanceled
     vm.expectEmit();
     emit NextTermSet(address(contest), newTopK, newTermEnd, transitionPeriod2);
     instanceDefaultAdmin.setNextTerm(address(contest), newTermEnd, transitionPeriod2, newTopK);
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, true);
   }
 }
 

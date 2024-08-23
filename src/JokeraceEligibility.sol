@@ -31,9 +31,9 @@ contract JokeraceEligibility is HatsEligibilityModule {
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-  /// @notice Emitted when a reelection is set
+  /// @notice Emitted when the next term is set
   event NextTermSet(address NewContest, uint256 newTopK, uint256 newTermEnd, uint256 newTransitionPeriod);
-  /// @notice Emitted when election's results are pulled
+  /// @notice Emitted when the next term is started
   event TermStarted(address contest, uint256 topK, uint256 termEnd, uint256 transitionPeriod);
 
   /*//////////////////////////////////////////////////////////////
@@ -73,14 +73,14 @@ contract JokeraceEligibility is HatsEligibilityModule {
     //////////////////////////////////////////////////////////////*/
 
   struct TermDetails {
-    /// @notice Current Jokerace contest (election)
+    /// @notice Jokerace contest (election)
     address contest;
     /// @notice First K winners of the contest will be eligible
     uint96 topK;
-    /// @notice First second after the term (a unix timestamp)
+    /// @notice Term's ending time (a unix timestamp)
     uint256 termEnd;
     /// @notice Period of time after the term end when previous elected members are still considered eligible until a
-    /// new term is set.
+    /// new term begins.
     uint256 transitionPeriod;
   }
 
@@ -104,9 +104,9 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * this ensures it can only be called once per instance, and that the implementation contract is never initialized.
    * @param _initData Packed initialization data with the following parameters:
    *  _contest - Jokerace contest. The contest must have down-voting disabled and sorting enabled.
-   *  _termEnd - Final second of the current term (a unix timestamp)
-   *  _transitionPeriod - Period of time after the term end when calling reelection is allowed and previous elected are
-   * still eligibile as long as reelection was not called
+   *  _termEnd - term's ending time  (a unix timestamp)
+   *  _transitionPeriod - Period of time after the term end when previous elected members are still considered eligible
+   * until a new term begins.
    *  _topK - First K winners of the contest will be eligible
    */
   function _setUp(bytes calldata _initData) internal override {
@@ -141,8 +141,9 @@ contract JokeraceEligibility is HatsEligibilityModule {
     returns (bool eligible, bool standing)
   {
     standing = true;
-    TermDetails memory currentTerm = terms[currentTermIndex];
-    if (block.timestamp < currentTerm.termEnd + currentTerm.transitionPeriod) {
+    uint256 currentTermEnd = terms[currentTermIndex].termEnd;
+    uint256 currentTransitionPeriod = terms[currentTermIndex].transitionPeriod;
+    if (block.timestamp < currentTermEnd + currentTransitionPeriod) {
       eligible = eligibleWearersPerTerm[_wearer][currentTermIndex];
     }
   }
@@ -152,7 +153,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
     //////////////////////////////////////////////////////////////*/
 
   /**
-   * @notice Pulls the contest results from the jokerace contest contract.
+   * @notice Pulls the contest results from the next term's Jokerace contest contract and activates the next term.
    * @dev The eligible wearers for a given completed contest are the top K winners of the contest. In case there is a
    * tie, meaning that candidates in places K and K+1 have the same score, then the results of this contest are
    * rejected.
@@ -162,11 +163,11 @@ contract JokeraceEligibility is HatsEligibilityModule {
     GovernorCountingSimple contest = GovernorCountingSimple(payable(nextTerm.contest));
     uint96 k = nextTerm.topK;
 
-    if (!_canStartNextTerm(terms[currentTermIndex].termEnd)) {
+    if (!_currentTermEnded(terms[currentTermIndex].termEnd)) {
       revert JokeraceEligibility_TermNotCompleted();
     }
 
-    if (contest.state() != Governor.ContestState.Completed) {
+    if (!_nextContestCompleted(contest)) {
       revert JokeraceEligibility_ContestNotCompleted();
     }
 
@@ -213,8 +214,8 @@ contract JokeraceEligibility is HatsEligibilityModule {
   }
 
   /**
-   * @notice Sets a reelection, i.e. updates the module with a new term.
-   * @dev Only the module's admin/s have the permission to set a reelection. If an admin is not set at the module
+   * @notice Sets the next term.
+   * @dev Only the module's admin/s have the permission to set the next term. If an admin is not set at the module
    * creation, then any admin of hatId is considered an admin by the module.
    */
   function setNextTerm(address newContest, uint256 newTermEnd, uint256 newTransitionPeriod, uint96 newTopK) public {
@@ -242,19 +243,23 @@ contract JokeraceEligibility is HatsEligibilityModule {
                           VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-  /// @notice Check if setting a new election is allowed.
+  /// @notice Check if starting the next term is allowed, meaning that the current term has ended and the next contest
+  /// is completed
   function canStartNextTerm() public view returns (bool allowed) {
-    // If the current term has ended
-    return _canStartNextTerm(terms[currentTermIndex].termEnd);
+    return _currentTermEnded(terms[currentTermIndex].termEnd)
+      && _nextContestCompleted(GovernorCountingSimple(payable(terms[currentTermIndex + 1].contest)));
   }
 
   /*//////////////////////////////////////////////////////////////
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-  /// @notice Check if setting a new election is allowed.
-  function _canStartNextTerm(uint256 currentTermEnd) internal view returns (bool allowed) {
+  function _currentTermEnded(uint256 currentTermEnd) internal view returns (bool allowed) {
     allowed = block.timestamp > currentTermEnd;
+  }
+
+  function _nextContestCompleted(GovernorCountingSimple nextContest) internal view returns (bool completed) {
+    completed = nextContest.state() == Governor.ContestState.Completed;
   }
 
   function _getCandidate(GovernorCountingSimple contest, uint256 proposalId) internal view returns (address candidate) {
