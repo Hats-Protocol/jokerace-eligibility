@@ -88,10 +88,13 @@ contract JokeraceEligibility is HatsEligibilityModule {
                             MUTABLE STATE
     //////////////////////////////////////////////////////////////*/
 
+  /// @notice Indexed terms
   mapping(uint256 termIndex => TermDetails termDetails) public terms;
 
+  /// @notice Current term index
   uint256 public currentTermIndex;
 
+  /// @notice Eligible wearers per term
   mapping(address wearer => mapping(uint256 termIndex => bool eligible)) public eligibleWearersPerTerm;
 
   /*//////////////////////////////////////////////////////////////
