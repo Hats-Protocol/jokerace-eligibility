@@ -32,7 +32,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
     //////////////////////////////////////////////////////////////*/
 
   /// @notice Emitted when the next term is set
-  event NextTermSet(address NewContest, uint256 newTopK, uint256 newTermEnd, uint256 newTransitionPeriod);
+  event NextTermSet(address newContest, uint256 newTopK, uint256 newTermEnd, uint256 newTransitionPeriod);
   /// @notice Emitted when the next term is started
   event TermStarted(address contest, uint256 topK, uint256 termEnd, uint256 transitionPeriod);
 
@@ -162,11 +162,12 @@ contract JokeraceEligibility is HatsEligibilityModule {
    * rejected.
    */
   function startNextTerm() public {
-    TermDetails memory nextTerm = terms[currentTermIndex + 1];
+    uint256 currentTermIndexMem = currentTermIndex;
+    TermDetails memory nextTerm = terms[currentTermIndexMem + 1];
     GovernorCountingSimple contest = GovernorCountingSimple(payable(nextTerm.contest));
     uint96 k = nextTerm.topK;
 
-    if (!_currentTermEnded(terms[currentTermIndex].termEnd)) {
+    if (!_currentTermEnded(terms[currentTermIndexMem].termEnd)) {
       revert JokeraceEligibility_TermNotCompleted();
     }
 
@@ -192,7 +193,7 @@ contract JokeraceEligibility is HatsEligibilityModule {
         // get the authors of the proposals and update their eligibility
         for (uint256 proposalIndex; proposalIndex < numProposalsOfCurrentRank;) {
           address candidate = _getCandidate(contest, proposalsOfCurrentRank[proposalIndex]);
-          eligibleWearersPerTerm[candidate][currentTermIndex + 1] = true;
+          eligibleWearersPerTerm[candidate][currentTermIndexMem + 1] = true;
 
           unchecked {
             ++proposalIndex;
@@ -253,12 +254,21 @@ contract JokeraceEligibility is HatsEligibilityModule {
       && _nextContestCompleted(GovernorCountingSimple(payable(terms[currentTermIndex + 1].contest)));
   }
 
+  function currentTermEnded() public view returns (bool ended) {
+    ended = block.timestamp > terms[currentTermIndex].termEnd;
+  }
+
+  function nextContestCompleted() public view returns (bool completed) {
+    completed =
+      GovernorCountingSimple(payable(terms[currentTermIndex + 1].contest)).state() == Governor.ContestState.Completed;
+  }
+
   /*//////////////////////////////////////////////////////////////
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-  function _currentTermEnded(uint256 currentTermEnd) internal view returns (bool allowed) {
-    allowed = block.timestamp > currentTermEnd;
+  function _currentTermEnded(uint256 currentTermEnd) internal view returns (bool ended) {
+    ended = block.timestamp > currentTermEnd;
   }
 
   function _nextContestCompleted(GovernorCountingSimple nextContest) internal view returns (bool completed) {

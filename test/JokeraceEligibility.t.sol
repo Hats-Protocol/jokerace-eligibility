@@ -400,6 +400,10 @@ contract ContestCompletedProposing2Scenario is Proposing2Scenario {
     vm.warp(contestStart + voteDelay + votePeriod + 1);
     bool canStart = instanceDefaultAdmin.canStartNextTerm();
     assertEq(canStart, true);
+    bool termEnded = instanceDefaultAdmin.currentTermEnded();
+    assertEq(termEnded, true);
+    bool nextContestCompleted = instanceDefaultAdmin.nextContestCompleted();
+    assertEq(nextContestCompleted, true);
     uint256 currentTermIndex = instanceDefaultAdmin.currentTermIndex();
     TermDetails memory nextTerm;
     (nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod) =
@@ -429,6 +433,10 @@ contract TestContestCompletedProposing2Scenario is ContestCompletedProposing2Sce
   function test_canStartNextTerm() public {
     bool canStart = instanceDefaultAdmin.canStartNextTerm();
     assertEq(canStart, false);
+    bool currentTermEnded = instanceDefaultAdmin.currentTermEnded();
+    assertEq(currentTermEnded, false);
+    vm.expectRevert();
+    instanceDefaultAdmin.nextContestCompleted();
   }
 }
 
@@ -495,6 +503,8 @@ contract TestTermNotCompleted is ContestCompletedVoting1Proposing1Scenario {
   function test_canStartNextTerm() public {
     bool canStart = instanceDefaultAdmin.canStartNextTerm();
     assertEq(canStart, false);
+    bool termEnded = instanceDefaultAdmin.currentTermEnded();
+    assertEq(termEnded, false);
   }
 
   function test_startNextTerm_reverts() public {
@@ -593,6 +603,16 @@ contract TestNextContestCanceledVoting1Proposing1Scenario is NextContestCanceled
   function test_canStartNextTerm() public {
     bool canStart = instanceDefaultAdmin.canStartNextTerm();
     assertEq(canStart, false);
+  }
+
+  function test_currentTermEnded() public {
+    bool ended = instanceDefaultAdmin.currentTermEnded();
+    assertEq(ended, true);
+  }
+
+  function test_nextContestCompleted() public {
+    bool completed = instanceDefaultAdmin.nextContestCompleted();
+    assertEq(completed, false);
   }
 
   function test_startNextTerm_reverts() public {
