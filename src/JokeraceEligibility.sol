@@ -255,12 +255,11 @@ contract JokeraceEligibility is HatsEligibilityModule {
   }
 
   function currentTermEnded() public view returns (bool ended) {
-    ended = block.timestamp > terms[currentTermIndex].termEnd;
+    ended = _currentTermEnded(terms[currentTermIndex].termEnd);
   }
 
   function nextContestCompleted() public view returns (bool completed) {
-    completed =
-      GovernorCountingSimple(payable(terms[currentTermIndex + 1].contest)).state() == Governor.ContestState.Completed;
+    completed = _nextContestCompleted(GovernorCountingSimple(payable(terms[currentTermIndex + 1].contest)));
   }
 
   /*//////////////////////////////////////////////////////////////
