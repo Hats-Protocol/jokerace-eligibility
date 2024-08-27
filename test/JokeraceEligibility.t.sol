@@ -20,7 +20,7 @@ contract DeployImplementationTest is DeployImplementation, Test {
   // bytes32 public SALT;
 
   uint256 public fork;
-  uint256 public BLOCK_NUMBER = 9_713_194; // the block number where hats module factory was deployed on Goerli;
+  uint256 public BLOCK_NUMBER = 6_488_268; // the block number where hats module factory was deployed on Sepolia;
 
   IHats public constant HATS = IHats(0x3bc1A0Ad72417f2d411118085256fC53CBdDd137); // v1.hatsprotocol.eth
   string public FACTORY_VERSION = "factory test version";
@@ -28,7 +28,7 @@ contract DeployImplementationTest is DeployImplementation, Test {
 
   function setUp() public virtual {
     // create and activate a fork, at BLOCK_NUMBER
-    fork = vm.createSelectFork(vm.rpcUrl("goerli"), BLOCK_NUMBER);
+    fork = vm.createSelectFork(vm.rpcUrl("sepolia"), BLOCK_NUMBER);
     // deploy via the script
     DeployImplementation.prepare(JOKERACE_ELIGIBILITY_VERSION, false); // set last arg to true to log deployment
     DeployImplementation.run();
@@ -37,10 +37,14 @@ contract DeployImplementationTest is DeployImplementation, Test {
 
 contract TestSetup is DeployImplementationTest {
   error JokeraceEligibility_ContestNotCompleted();
+  error JokeraceEligibility_ContestTie();
   error JokeraceEligibility_TermNotCompleted();
   error JokeraceEligibility_NotAdmin();
   error JokeraceEligibility_MustHaveDownvotingDisabled();
   error JokeraceEligibility_MustHaveSortingEnabled();
+
+  event NextTermSet(address NewContest, uint256 newTopK, uint256 newTermEnd, uint256 newTransitionPeriod);
+  event TermStarted(address contest, uint256 topK, uint256 termEnd, uint256 transitionPeriod);
 
   HatsModuleFactory constant FACTORY = HatsModuleFactory(0xfE661c01891172046feE16D3a57c3Cf456729efA);
   JokeraceEligibility public instanceDefaultAdmin;
@@ -73,12 +77,16 @@ contract TestSetup is DeployImplementationTest {
   Contest contest;
   Contest contestWithDownVoting;
   Contest contestWithSortingDisabled;
+  Contest contestCanceled;
   //GenericVotesTimestampToken token;
   uint256[] args;
   uint256 contestStart;
   uint256 constant voteDelay = 3600;
   uint256 constant votePeriod = 3600;
   uint256 constant termPeriod = 86_400;
+  uint256 constant transitionPeriod = 604_800;
+  uint256 constant transitionPeriod2 = 1_209_600;
+  uint256 termEnd1;
 
   enum ContestState {
     NotStarted,
@@ -88,14 +96,25 @@ contract TestSetup is DeployImplementationTest {
     Completed
   }
 
-  function deployInstance(uint256 _winnersHat, uint256 _adminHat, address _contest, uint256 _termEnd, uint256 _topK)
-    public
-    returns (JokeraceEligibility)
-  {
+  struct TermDetails {
+    address contest;
+    uint96 topK;
+    uint256 termEnd;
+    uint256 transitionPeriod;
+  }
+
+  function deployInstance(
+    uint256 _winnersHat,
+    uint256 _adminHat,
+    address _contest,
+    uint256 _termEnd,
+    uint256 _topK,
+    uint256 _transitionPeriod
+  ) public returns (JokeraceEligibility) {
     // encode the other immutable args as packed bytes
     otherImmutableArgs = abi.encodePacked(_adminHat);
     // encoded the initData as unpacked bytes
-    initData = abi.encode(_contest, _termEnd, _topK);
+    initData = abi.encode(_contest, _termEnd, _transitionPeriod, _topK);
     // deploy the instance
     return JokeraceEligibility(
       deployModuleInstance(FACTORY, address(implementation), _winnersHat, otherImmutableArgs, initData)
@@ -118,6 +137,7 @@ contract TestSetup is DeployImplementationTest {
   function setUp() public virtual override {
     super.setUp();
     contestStart = block.timestamp;
+    termEnd1 = contestStart + voteDelay + votePeriod + termPeriod;
     // set up a contest with sorting enabled and without down voting
     leaf1 = keccak256(abi.encodePacked(candidate1, uint256(100)));
     leaf2 = keccak256(abi.encodePacked(candidate2, uint256(100)));
@@ -138,6 +158,10 @@ contract TestSetup is DeployImplementationTest {
     args.push(250);
     contest = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
 
+    // set up a contest and cancel it
+    contestCanceled = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
+    contestCanceled.cancel();
+
     // set up a contest with sorting enabled and with down voting
     args[5] = 1;
     contestWithDownVoting = new Contest("test contest", "contest", bytes32(0), votingMerkleRoot, args);
@@ -156,13 +180,10 @@ contract TestSetup is DeployImplementationTest {
     HATS.mintHat(optionalAdminHat, optionalAdmin);
     vm.stopPrank();
     // deploy the eligibility instance with a default admin
-    instanceDefaultAdmin =
-      deployInstance(winnersHat, uint256(0), address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin = deployInstance(winnersHat, uint256(0), address(contest), termEnd1, 2, transitionPeriod);
     // deploy the eligibility instance with a specific hat admin. This instance is used only to check correct admin
     // rights
-    instanceHatAdmin = deployInstance(
-      winnersHat, optionalAdminHat, address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2
-    );
+    instanceHatAdmin = deployInstance(winnersHat, optionalAdminHat, address(contest), termEnd1, 2, transitionPeriod);
 
     // update winners hat eligibilty to instance
     vm.prank(dao);
@@ -183,22 +204,37 @@ contract TestDeployment is TestSetup {
     assertEq(instanceHatAdmin.ADMIN_HAT(), optionalAdminHat);
   }
 
-  function test_instanceContest() public {
-    assertEq(address(instanceDefaultAdmin.underlyingContest()), address(contest));
+  function test_instanceNextTerm() public {
+    uint256 currentTermIndex = instanceDefaultAdmin.currentTermIndex();
+    TermDetails memory nextTerm;
+    (nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod) =
+      instanceDefaultAdmin.terms(currentTermIndex + 1);
+    assertEq(address(nextTerm.contest), address(contest));
+    assertEq(nextTerm.termEnd, termEnd1);
+    assertEq(nextTerm.topK, 2);
+    assertEq(nextTerm.transitionPeriod, transitionPeriod);
   }
 
-  function test_instanceTermEnd() public {
-    assertEq(instanceDefaultAdmin.termEnd(), contest.contestDeadline() + 86_400);
-  }
-
-  function test_instanceTopK() public {
-    assertEq(instanceDefaultAdmin.topK(), 2);
+  function test_instanceCurrentTerm() public {
+    uint256 currentTermIndex = instanceDefaultAdmin.currentTermIndex();
+    TermDetails memory currentTerm;
+    (currentTerm.contest, currentTerm.topK, currentTerm.termEnd, currentTerm.transitionPeriod) =
+      instanceDefaultAdmin.terms(currentTermIndex);
+    assertEq(currentTerm.contest, address(0));
+    assertEq(currentTerm.termEnd, 0);
+    assertEq(currentTerm.topK, 0);
+    assertEq(currentTerm.transitionPeriod, 0);
   }
 
   function test_hatEligibility() public {
     assertEq(
       HATS.getHatEligibilityModule(winnersHat), address(instanceDefaultAdmin), "eligibility module of winners hat"
     );
+  }
+
+  function test_canStartNextTerm() public {
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, false);
   }
 }
 
@@ -277,14 +313,9 @@ contract TestProposing1Scenario is Proposing1Scenario {
     assertEq(proposalIds.length, 3, "number of proposals");
   }
 
-  function test_pullContestResults_reverts() public {
+  function test_startNextTerm_reverts() public {
     vm.expectRevert(JokeraceEligibility_ContestNotCompleted.selector);
-    instanceDefaultAdmin.pullElectionResults();
-  }
-
-  function test_setReelection_reverts() public {
-    vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.startNextTerm();
   }
 }
 
@@ -330,26 +361,25 @@ contract TestVoting1Proposing1Scenario is Voting1Proposing1Scenario {
     assertEq(int256(forVotes3) - int256(againstVotes3), 100, "candidate 3 votes");
   }
 
-  function test_pullContestResults_reverts() public {
+  function test_startNextTerm_reverts() public {
     vm.expectRevert(JokeraceEligibility_ContestNotCompleted.selector);
-    instanceDefaultAdmin.pullElectionResults();
-  }
-
-  function test_setReelection_reverts() public {
-    vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.startNextTerm();
   }
 }
 
 // Contest completed with candidates 1 & 2 as winners
 contract ContestCompletedVoting1Proposing1Scenario is Voting1Proposing1Scenario {
-  bool pullElectionResultsSuccees;
-
   function setUp() public virtual override {
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + 1);
-    pullElectionResultsSuccees = instanceDefaultAdmin.pullElectionResults();
+    uint256 currentTermIndex = instanceDefaultAdmin.currentTermIndex();
+    TermDetails memory nextTerm;
+    (nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod) =
+      instanceDefaultAdmin.terms(currentTermIndex + 1);
+    vm.expectEmit();
+    emit TermStarted(nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod);
+    instanceDefaultAdmin.startNextTerm();
   }
 }
 
@@ -368,7 +398,19 @@ contract ContestCompletedProposing2Scenario is Proposing2Scenario {
     super.setUp();
     // set time to contest completion
     vm.warp(contestStart + voteDelay + votePeriod + 1);
-    instanceDefaultAdmin.pullElectionResults();
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, true);
+    bool termEnded = instanceDefaultAdmin.currentTermEnded();
+    assertEq(termEnded, true);
+    bool nextContestCompleted = instanceDefaultAdmin.nextContestCompleted();
+    assertEq(nextContestCompleted, true);
+    uint256 currentTermIndex = instanceDefaultAdmin.currentTermIndex();
+    TermDetails memory nextTerm;
+    (nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod) =
+      instanceDefaultAdmin.terms(currentTermIndex + 1);
+    vm.expectEmit();
+    emit TermStarted(address(nextTerm.contest), nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod);
+    instanceDefaultAdmin.startNextTerm();
   }
 }
 
@@ -387,19 +429,58 @@ contract TestContestCompletedProposing2Scenario is ContestCompletedProposing2Sce
     assertEq(HATS.isEligible(candidate2, winnersHat), false, "candidate 2 eligibility");
     assertEq(HATS.isEligible(candidate3, winnersHat), false, "candidate 3 eligibility");
   }
+
+  function test_canStartNextTerm() public {
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, false);
+    bool currentTermEnded = instanceDefaultAdmin.currentTermEnded();
+    assertEq(currentTermEnded, false);
+    vm.expectRevert();
+    instanceDefaultAdmin.nextContestCompleted();
+  }
 }
 
 contract TestContestCompletedVoting2Proposing1Scenario is ContestCompletedVoting2Proposing1Scenario {
-  function test_pullElectionResults() public {
-    bool success = instanceDefaultAdmin.pullElectionResults();
-    assertEq(success, false);
-    assertEq(instanceDefaultAdmin.termEnd(), block.timestamp);
+  function test_startNextTerm() public {
+    vm.expectRevert(JokeraceEligibility_ContestTie.selector);
+    instanceDefaultAdmin.startNextTerm();
+    uint256 currentTermIndex = instanceDefaultAdmin.currentTermIndex();
+    assertEq(currentTermIndex, 0);
+    TermDetails memory currentTerm;
+    (currentTerm.contest, currentTerm.topK, currentTerm.termEnd, currentTerm.transitionPeriod) =
+      instanceDefaultAdmin.terms(currentTermIndex);
+    assertEq(currentTerm.contest, address(0));
+    assertEq(currentTerm.topK, 0);
+    assertEq(currentTerm.termEnd, 0);
+    assertEq(currentTerm.transitionPeriod, 0);
+    TermDetails memory nextTerm;
+    (nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod) =
+      instanceDefaultAdmin.terms(currentTermIndex + 1);
+    assertEq(nextTerm.contest, address(contest));
+    assertEq(nextTerm.topK, 2);
+    assertEq(nextTerm.termEnd, termEnd1);
+    assertEq(nextTerm.transitionPeriod, transitionPeriod);
   }
 }
 
 contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting1Proposing1Scenario {
-  function test_pullElectionResult() public {
-    assertEq(pullElectionResultsSuccees, true);
+  function test_startNextTermResult() public {
+    uint256 currentTermIndex = instanceDefaultAdmin.currentTermIndex();
+    assertEq(currentTermIndex, 1);
+    TermDetails memory currentTerm;
+    (currentTerm.contest, currentTerm.topK, currentTerm.termEnd, currentTerm.transitionPeriod) =
+      instanceDefaultAdmin.terms(currentTermIndex);
+    assertEq(currentTerm.contest, address(contest));
+    assertEq(currentTerm.topK, 2);
+    assertEq(currentTerm.termEnd, termEnd1);
+    assertEq(currentTerm.transitionPeriod, transitionPeriod);
+    TermDetails memory nextTerm;
+    (nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod) =
+      instanceDefaultAdmin.terms(currentTermIndex + 1);
+    assertEq(nextTerm.contest, address(0));
+    assertEq(nextTerm.topK, 0);
+    assertEq(nextTerm.termEnd, 0);
+    assertEq(nextTerm.transitionPeriod, 0);
   }
 
   function test_eligibilityInstance() public {
@@ -416,10 +497,21 @@ contract TestContestCompletedVoting1Proposing1Scenario is ContestCompletedVoting
     assertEq(HATS.isEligible(candidate2, winnersHat), false, "candidate 2 eligibility");
     assertEq(HATS.isEligible(candidate3, winnersHat), true, "candidate 3 eligibility");
   }
+}
 
-  function test_setReelection_reverts() public {
+contract TestTermNotCompleted is ContestCompletedVoting1Proposing1Scenario {
+  function test_canStartNextTerm() public {
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, false);
+    bool termEnded = instanceDefaultAdmin.currentTermEnded();
+    assertEq(termEnded, false);
+  }
+
+  function test_startNextTerm_reverts() public {
+    vm.prank(dao);
+    instanceDefaultAdmin.setNextTerm(address(contest), termEnd1 + 86_400, transitionPeriod, 3);
     vm.expectRevert(JokeraceEligibility_TermNotCompleted.selector);
-    instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.startNextTerm();
   }
 }
 
@@ -432,14 +524,52 @@ contract TermEndedVoting1Proposing1Scenario is ContestCompletedVoting1Proposing1
   }
 }
 
+contract TestStartEmptyTerm is TermEndedVoting1Proposing1Scenario {
+  function test_canStartNextTerm() public {
+    vm.expectRevert();
+    instanceDefaultAdmin.canStartNextTerm();
+  }
+
+  function test_startNextTerm_reverts() public {
+    vm.expectRevert();
+    instanceDefaultAdmin.startNextTerm();
+  }
+}
+
 contract TestTermEndedVoting1Proposing1Scenario is TermEndedVoting1Proposing1Scenario {
-  function test_setReelectionNotAdmin_reverts() public {
+  function test_setNextTermnNotAdmin_reverts() public {
     vm.startPrank(candidate1);
     vm.expectRevert(JokeraceEligibility_NotAdmin.selector);
-    instanceDefaultAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceDefaultAdmin.setNextTerm(address(contest), termEnd1, transitionPeriod, 2);
     vm.stopPrank();
   }
 
+  function test_eligibilityInstance() public {
+    (bool eligible1,) = instanceDefaultAdmin.getWearerStatus(candidate1, winnersHat);
+    assertEq(eligible1, true, "candidate 1 eligibility");
+    (bool eligible2,) = instanceDefaultAdmin.getWearerStatus(candidate2, winnersHat);
+    assertEq(eligible2, false, "candidate 2 eligibility");
+    (bool eligible3,) = instanceDefaultAdmin.getWearerStatus(candidate3, winnersHat);
+    assertEq(eligible3, true, "candidate 3 eligibility");
+  }
+
+  function test_eligibilityHats() public {
+    assertEq(HATS.isEligible(candidate1, winnersHat), true, "candidate 1 eligibility");
+    assertEq(HATS.isEligible(candidate2, winnersHat), false, "candidate 2 eligibility");
+    assertEq(HATS.isEligible(candidate3, winnersHat), true, "candidate 3 eligibility");
+  }
+}
+
+// Transition period ended, no reelection, previous elected should not be eligible anymore
+contract TransitionPeriodEndedVoting1Proposing1Scenario is TermEndedVoting1Proposing1Scenario {
+  function setUp() public virtual override {
+    super.setUp();
+    // set time to contest completion
+    vm.warp(termEnd1 + transitionPeriod + 1);
+  }
+}
+
+contract TestTransitionPeriodEndedVoting1Proposing1Scenario is TransitionPeriodEndedVoting1Proposing1Scenario {
   function test_eligibilityInstance() public {
     (bool eligible1,) = instanceDefaultAdmin.getWearerStatus(candidate1, winnersHat);
     assertEq(eligible1, false, "candidate 1 eligibility");
@@ -456,7 +586,53 @@ contract TestTermEndedVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sce
   }
 }
 
-contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Scenario {
+// Transition period ended, no reelection, previous elected should not be eligible anymore
+contract NextContestCanceledVoting1Proposing1Scenario is TermEndedVoting1Proposing1Scenario {
+  function setUp() public virtual override {
+    super.setUp();
+    uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
+    uint96 newTopK = 5;
+    vm.prank(dao);
+    vm.expectEmit();
+    emit NextTermSet(address(contestCanceled), newTopK, newTermEnd, transitionPeriod);
+    instanceDefaultAdmin.setNextTerm(address(contestCanceled), newTermEnd, transitionPeriod, newTopK);
+  }
+}
+
+contract TestNextContestCanceledVoting1Proposing1Scenario is NextContestCanceledVoting1Proposing1Scenario {
+  function test_canStartNextTerm() public {
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, false);
+  }
+
+  function test_currentTermEnded() public {
+    bool ended = instanceDefaultAdmin.currentTermEnded();
+    assertEq(ended, true);
+  }
+
+  function test_nextContestCompleted() public {
+    bool completed = instanceDefaultAdmin.nextContestCompleted();
+    assertEq(completed, false);
+  }
+
+  function test_startNextTerm_reverts() public {
+    vm.expectRevert(JokeraceEligibility_ContestNotCompleted.selector);
+    instanceDefaultAdmin.startNextTerm();
+  }
+
+  function test_canSetNewElection() public {
+    vm.prank(dao);
+    uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
+    uint96 newTopK = 5;
+    vm.expectEmit();
+    emit NextTermSet(address(contest), newTopK, newTermEnd, transitionPeriod2);
+    instanceDefaultAdmin.setNextTerm(address(contest), newTermEnd, transitionPeriod2, newTopK);
+    bool canStart = instanceDefaultAdmin.canStartNextTerm();
+    assertEq(canStart, true);
+  }
+}
+
+contract TestSetNextTermVoting1Proposing1Scenario is TermEndedVoting1Proposing1Scenario {
   address public newContest;
 
   function setUp() public virtual override {
@@ -482,108 +658,99 @@ contract TestReelectionVoting1Proposing1Scenario is TermEndedVoting1Proposing1Sc
   function test_reelection() public {
     vm.prank(dao);
     uint256 newTermEnd = block.timestamp + voteDelay + votePeriod;
-    uint256 newTopK = 5;
-    instanceDefaultAdmin.reelection(newContest, newTermEnd, newTopK);
-    assertEq(address(instanceDefaultAdmin.underlyingContest()), newContest);
-    assertEq(instanceDefaultAdmin.topK(), newTopK);
-    assertEq(instanceDefaultAdmin.termEnd(), newTermEnd);
+    uint96 newTopK = 5;
+    vm.expectEmit();
+    emit NextTermSet(address(newContest), newTopK, newTermEnd, transitionPeriod2);
+    instanceDefaultAdmin.setNextTerm(newContest, newTermEnd, transitionPeriod2, newTopK);
   }
 }
 
-contract TestReelectionHatAdmin is TestSetup {
+contract TestSetNextTermHatAdmin is TestSetup {
   function setUp() public virtual override {
     super.setUp();
     // set time to contest completion
-    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
+    vm.warp(termEnd1 + 1);
   }
 
-  function test_reelectionByTopHat_reverts() public {
+  function test_setNextTermByTopHat_reverts() public {
     vm.startPrank(dao);
     vm.expectRevert(JokeraceEligibility_NotAdmin.selector);
-    instanceHatAdmin.reelection(address(contest), contestStart + voteDelay + votePeriod + termPeriod, 2);
+    instanceHatAdmin.setNextTerm(
+      address(contest), contestStart + voteDelay + votePeriod + termPeriod, transitionPeriod, 2
+    );
     vm.stopPrank();
   }
 }
 
-contract TestReelectionDefaultAdmin is TestSetup {
+contract TestSetNextTermDefaultAdmin is TestSetup {
   address newContest;
   uint256 newTermEnd;
-  uint256 newTopK;
+  uint96 newTopK;
 
   function setUp() public virtual override {
     super.setUp();
-    // set time to contest completion
-    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
     newContest = address(contest);
-    newTermEnd = contestStart + voteDelay + votePeriod + termPeriod + 86_000;
+    newTermEnd = termEnd1 + 86_000;
     newTopK = 5;
     vm.prank(optionalAdmin);
-    instanceHatAdmin.reelection(newContest, newTermEnd, newTopK);
+    vm.expectEmit();
+    emit NextTermSet(address(newContest), newTopK, newTermEnd, transitionPeriod);
+    instanceHatAdmin.setNextTerm(newContest, newTermEnd, transitionPeriod, newTopK);
   }
 
-  function test_reelectionDefaultAdmin() public {
-    assertEq(address(instanceHatAdmin.underlyingContest()), newContest);
-    assertEq(instanceHatAdmin.topK(), newTopK);
-    assertEq(instanceHatAdmin.termEnd(), newTermEnd);
+  function test_setNextTermDefaultAdmin() public {
+    assertEq(instanceHatAdmin.currentTermIndex(), 0);
+    TermDetails memory nextTerm;
+    (nextTerm.contest, nextTerm.topK, nextTerm.termEnd, nextTerm.transitionPeriod) = instanceHatAdmin.terms(1);
+    assertEq(address(nextTerm.contest), address(newContest));
+    assertEq(nextTerm.termEnd, newTermEnd);
+    assertEq(nextTerm.topK, newTopK);
+    assertEq(nextTerm.transitionPeriod, transitionPeriod);
   }
 }
 
 contract TestSetupContestWithDownVoting is TestSetup {
-  function setUp() public virtual override {
-    super.setUp();
-    // set time to contest completion
-    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
-  }
-
   function test_setUp_reverts() public {
     vm.expectRevert(JokeraceEligibility_MustHaveDownvotingDisabled.selector);
     deployInstance(
-      winnersHat, uint256(1), address(contestWithDownVoting), contestStart + voteDelay + votePeriod + termPeriod, 2
+      winnersHat,
+      uint256(1),
+      address(contestWithDownVoting),
+      contestStart + voteDelay + votePeriod + termPeriod,
+      2,
+      transitionPeriod
     );
   }
 }
 
 contract TestSetupContestWithSortingDisabled is TestSetup {
-  function setUp() public virtual override {
-    super.setUp();
-    // set time to contest completion
-    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
-  }
-
   function test_setUp_reverts() public {
     vm.expectRevert(JokeraceEligibility_MustHaveSortingEnabled.selector);
     deployInstance(
-      winnersHat, uint256(1), address(contestWithSortingDisabled), contestStart + voteDelay + votePeriod + termPeriod, 2
+      winnersHat,
+      uint256(1),
+      address(contestWithSortingDisabled),
+      contestStart + voteDelay + votePeriod + termPeriod,
+      2,
+      transitionPeriod
     );
   }
 }
 
-contract TestReelectionContestWithDownVoting is TestSetup {
-  function setUp() public virtual override {
-    super.setUp();
-    // set time to contest completion
-    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
-  }
-
+contract TestSetNextTermContestWithDownVoting is TestSetup {
   function test_reelection_reverts() public {
     vm.startPrank(dao);
     vm.expectRevert(JokeraceEligibility_MustHaveDownvotingDisabled.selector);
-    instanceDefaultAdmin.reelection(address(contestWithDownVoting), block.timestamp + 86_400, 5);
+    instanceDefaultAdmin.setNextTerm(address(contestWithDownVoting), block.timestamp + 86_400, transitionPeriod, 5);
     vm.stopPrank();
   }
 }
 
-contract TestReelectionContestWithSortingDisabled is TestSetup {
-  function setUp() public virtual override {
-    super.setUp();
-    // set time to contest completion
-    vm.warp(contestStart + voteDelay + votePeriod + termPeriod + 1);
-  }
-
+contract TestSetNextTermContestWithSortingDisabled is TestSetup {
   function test_reelection_reverts() public {
     vm.startPrank(dao);
     vm.expectRevert(JokeraceEligibility_MustHaveSortingEnabled.selector);
-    instanceDefaultAdmin.reelection(address(contestWithSortingDisabled), block.timestamp + 86_400, 5);
+    instanceDefaultAdmin.setNextTerm(address(contestWithSortingDisabled), block.timestamp + 86_400, transitionPeriod, 5);
     vm.stopPrank();
   }
 }
